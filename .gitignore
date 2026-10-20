@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Datasets (large binary files – download with: python -m src.data --summary)
+data/
+cache/
+
+# Experiment run artifacts (large – kept locally or on shared drive)
+results/runs/
+results/all_results.csv
+results/failures.log
+
+# Figures (generated from results)
+figures/*.png
+figures/*.pdf
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Keep empty directory markers
+!results/.gitkeep
+!results/runs/.gitkeep
+!cache/.gitkeep
+!figures/.gitkeep
+!data/.gitkeep
