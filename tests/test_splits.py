@@ -51,6 +51,15 @@ def test_equal_train_sizes(fixture_graph):
     assert len(set(sizes.values())) == 1, sizes
 
 
+def test_random_target_is_every_node_outside_train_and_val(fixture_graph):
+    # Unlike the benchmark-only _planetoid_split (1,000 test nodes on Cora), the production
+    # random split must leave no node unassigned.
+    for seed in range(5):
+        s = make_split(fixture_graph, "random", seed=seed, n_val=200)
+        target = s["target_fit"] | s["target_eval"]
+        np.testing.assert_array_equal(target, ~(s["train"] | s["val"]))
+
+
 def test_target_is_complement_of_region(fixture_graph):
     s = make_split(fixture_graph, "structural", seed=0, n_val=200)
     d = s["diagnostics"]
@@ -120,3 +129,7 @@ def test_class_coverage_and_train_size(name):
         _check_masks(g, r)
         _check_masks(g, s)
         assert s["train"].sum() == r["train"].sum()
+        r_target = r["target_fit"] | r["target_eval"]
+        np.testing.assert_array_equal(r_target, ~(r["train"] | r["val"]))
+    if name == "cora":
+        assert int(r_target.sum()) == 2708 - 140 - 500
