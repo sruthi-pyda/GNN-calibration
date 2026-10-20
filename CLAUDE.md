@@ -25,5 +25,11 @@ python -m src.run_experiments --dry-run
 streamlit run dashboard/app.py
 ```
 
+## Joint decisions (deviations from the master plan)
+
+| Date | Decision | Reason | Files affected |
+|------|----------|--------|----------------|
+| Oct 2026 | Early stopping uses **validation loss**, not validation accuracy | Val-accuracy saturates at epoch ~17, leaving the model under-trained (conf 0.39 vs acc 0.81 on Cora GCN). Val-loss gives a more fully-trained model and more stable ECE baselines, which is required for C1 (structural-vs-random gap > seed std). Decided before P3, on principle, not by comparing C1 outcomes. | `src/train.py` |
+
 ## End of every phase
 Stop. List files changed, tests run with real output, deviations from the plan, open questions. Do not start the next phase.

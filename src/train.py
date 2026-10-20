@@ -92,7 +92,13 @@ def train_model(
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
 
     # ── training loop ─────────────────────────────────────────────────────
-    best_val_acc  = -1.0
+    # Early stopping on validation *loss* (not accuracy).
+    # Rationale (joint decision, Oct 2026): val-accuracy plateaus very early
+    # (~epoch 17) leaving the model under-trained and ECE unstable across seeds.
+    # Val-loss continues to improve after accuracy saturates, giving a more
+    # fully-trained model and more stable calibration baselines for C1.
+    best_val_loss = float("inf")
+    best_val_acc  = 0.0          # val_acc at the best-loss epoch, for reporting
     best_weights  = None
     no_improve    = 0
     best_epoch    = 0
@@ -109,13 +115,15 @@ def train_model(
         model.eval()
         with torch.no_grad():
             val_logits = model(X_feed, A_hat)[vi]
+            val_loss   = F.cross_entropy(val_logits, y_val).item()
             val_acc    = (val_logits.argmax(1) == y_val).float().mean().item()
 
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            best_weights = {k: v.clone() for k, v in model.state_dict().items()}
-            no_improve   = 0
-            best_epoch   = epoch
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_val_acc  = val_acc
+            best_weights  = {k: v.clone() for k, v in model.state_dict().items()}
+            no_improve    = 0
+            best_epoch    = epoch
         else:
             no_improve += 1
             if no_improve >= patience:
@@ -291,6 +299,8 @@ if __name__ == "__main__":
     print(f"Loading {args.dataset} …")
     g = load_graph(args.dataset)
 
+    # CLI uses a random split for quick exploration.
+    # The gate number (0.8140) comes from _planetoid_split; see test_gcn_cora_accuracy.
     split = _simple_split(g, seed=args.seed)
     n_train = int(split["train"].sum())
     n_val   = int(split["val"].sum())
@@ -317,7 +327,7 @@ if __name__ == "__main__":
 
     direction = "over-confident" if conf_val > acc_val else "under-confident"
 
-    print(f"\n{'─'*48}")
+    print(f"\n{'-'*48}")
     print(f"  Dataset        : {args.dataset}")
     print(f"  Model          : {args.model.upper()}")
     print(f"  Best epoch     : {result['best_epoch']}")
@@ -331,7 +341,7 @@ if __name__ == "__main__":
     print(f"  Avg confidence : {conf_val:.4f}")
     print(f"  Calibration    : {direction}")
     print(f"  Train time     : {result['train_sec']:.1f}s")
-    print(f"{'─'*48}")
+    print(f"{'-'*48}")
 
     if acc_val < 0.78 and args.model == "gcn" and args.dataset == "cora":
         print(f"\n  WARNING: Cora GCN accuracy {acc_val:.4f} < 0.78 – reporting as deviation.")
