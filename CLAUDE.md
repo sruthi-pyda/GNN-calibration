@@ -25,5 +25,30 @@ python -m src.run_experiments --dry-run
 streamlit run dashboard/app.py
 ```
 
+## Architectural notes for P3 and later
+
+**Four masks do not always cover all N nodes — do not assume they do.**
+In the random split every node outside train|val is assigned to target, so
+train+val+target_fit+target_eval = N (verified by Saanvi on Cora/CiteSeer/
+PubMed/Chameleon/roman-empire, seeds 0–4; Cora target = 2,068 nodes).
+In the structural split, train-region nodes that were *not* selected for
+train or val belong to no mask by design (train-region interior nodes that
+are neither source labels nor target nodes). Typical counts: 468–611 on Cora,
+~8,000 on PubMed and roman-empire, per seed.
+Rule for `run_one` and all metric code: **index into the masks directly;
+never compute the complement of train|val and assume it equals target.**
+
+**Chameleon random-split target is thin.**
+With kind="random" Chameleon's target region is ~290 nodes, giving ~145
+eval-half nodes. Per-cluster ECE requires ≥20 eval nodes per cluster
+(already in `per_cluster_metrics`), so most clusters will return NaN rows.
+The plan flags this as an accepted risk; document it in the run artifacts.
+
+## Joint decisions (deviations from the master plan)
+
+| Date | Decision | Reason | Files affected |
+|------|----------|--------|----------------|
+| Oct 2026 | Early stopping uses **validation loss**, not validation accuracy | Val-accuracy saturates at epoch ~17, leaving the model under-trained (conf 0.39 vs acc 0.81 on Cora GCN). Val-loss gives a more fully-trained model and more stable ECE baselines, which is required for C1 (structural-vs-random gap > seed std). Decided before P3, on principle, not by comparing C1 outcomes. | `src/train.py` |
+
 ## End of every phase
 Stop. List files changed, tests run with real output, deviations from the plan, open questions. Do not start the next phase.
