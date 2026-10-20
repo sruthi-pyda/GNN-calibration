@@ -39,7 +39,7 @@ gnn_cal/
     train.py           train loop -> logits                 [A: Sruthi]
     metrics.py         ECE variants, NLL, Brier, MCE        [A: Sruthi]
     calibrate.py       TS, LF-TS, LF-CTS, LF-CTS+          [A: Sruthi]
-    baselines.py       CaGCN, ATC-TS, STAC                  [C: Smitha]
+    baselines.py       CaGCN, ATC-TS, STAC                  [A: Sruthi, after P4-A]
     run_experiments.py driver, logging                      [joint]
     make_figures.py    F1-F7                                [A: Sruthi]
   dashboard/app.py                                          [B: Saanvi]
@@ -73,6 +73,6 @@ streamlit run dashboard/app.py
 - `main` – protected; merges at gates P0, P3, P5 only
 - `lane-a/<phase>` – Sruthi's work
 - `lane-b/<phase>` – Saanvi's work
-- `lane-c/<phase>` – Smitha's work (if present)
+- No Lane C: P1-C dashboard shell -> Lane B (after P1-B); P2-C baselines -> Lane A (after P4-A); P4-C CSBM sweep dropped
 
 See CLAUDE.md for hard rules and phase prompts.

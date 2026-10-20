@@ -4,7 +4,7 @@
 Master plan: GNN Calibration Project — Master Plan.md (in the parent directory).
 Baseline: "Clustering Analysis for Label-Free GNN Calibration" (Oct 10, 2026).
 Lanes: A = Sruthi (data, models, metrics, calibrate, figures). B = Saanvi (clustering, splits, dashboard).
-C = Smitha if present (baselines, extra datasets, CSBM sweep). Edit only your lane's files.
+No Lane C: P1-C dashboard shell -> B (after P1-B), P2-C baselines -> A (after P4-A), P4-C CSBM sweep dropped. Edit only your lane's files.
 
 ## Hard rules
 1. Never pass g.y to a calibrator, the gate, or a proxy. Use GuardedLabels. tests/test_leakage.py must pass.
