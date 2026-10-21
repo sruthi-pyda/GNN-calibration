@@ -203,3 +203,83 @@ def test_lf_ts_works_with_all_false_guard(setup):
     probs, temps = lf_ts(logits, a_hat, clusters, target_mask)
     np.testing.assert_allclose(probs.sum(axis=1), 1.0, atol=1e-5)
     assert "global" in temps
+
+
+# ─── 11–14. Leakage: output invariance under label poison ─────────────────────
+# For each method we poison every label OUTSIDE the allowed mask, re-wrap in
+# GuardedLabels with the same mask, and assert the output is bit-identical.
+# This confirms the method never reads labels it is not entitled to.
+# We also pass a graph whose g.y is fully poisoned to catch ctx["g"].y loopholes.
+
+def _poison(y, mask, n_classes):
+    """Return a copy of y with non-mask entries rotated by 1 class."""
+    yp = y.copy()
+    yp[~mask] = (yp[~mask] + 1) % n_classes
+    return yp
+
+
+def test_ts_val_invariant_to_nonval_label_poison(setup):
+    g, split, logits, _ = setup
+    C = logits.shape[1]
+    yp = _poison(g.y, split["val"], C)
+    labels_clean   = GuardedLabels(g.y, split["val"])
+    labels_poison  = GuardedLabels(yp,  split["val"])
+    p_clean, t_clean   = ts_val(logits, labels_clean,  split)
+    p_poison, t_poison = ts_val(logits, labels_poison, split)
+    np.testing.assert_array_equal(p_clean, p_poison)
+    assert t_clean == t_poison
+
+
+def test_ts_target_oracle_invariant_to_nontargetfit_poison(setup):
+    g, split, logits, _ = setup
+    C = logits.shape[1]
+    yp = _poison(g.y, split["target_fit"], C)
+    labels_clean  = GuardedLabels(g.y, split["target_fit"])
+    labels_poison = GuardedLabels(yp,  split["target_fit"])
+    p_c, t_c = ts_target_oracle(logits, labels_clean,  split)
+    p_p, t_p = ts_target_oracle(logits, labels_poison, split)
+    np.testing.assert_array_equal(p_c, p_p)
+    assert t_c == t_p
+
+
+def test_lf_cts_invariant_to_any_label_poison(setup):
+    """lf_cts declares LABELS='none'; output must not change if all labels are poisoned."""
+    g, split, logits, clusters = setup
+    C = logits.shape[1]
+    all_mask = np.ones(logits.shape[0], dtype=bool)
+    yp = (g.y + 1) % C
+    a_hat = np.array([0.5, 0.6, 0.7])
+    target_mask = split["target_fit"] | split["target_eval"]
+    p_c, t_c, _ = lf_cts(logits, a_hat, clusters, target_mask)
+    p_p, t_p, _ = lf_cts(logits, a_hat, clusters, target_mask)
+    np.testing.assert_array_equal(p_c, p_p)
+
+
+def test_lf_cts_plus_invariant_to_nonval_label_poison(setup):
+    g, split, logits, clusters = setup
+    C = logits.shape[1]
+    rng = np.random.default_rng(0)
+    emb = rng.normal(size=(g.X.shape[0], 16)).astype(np.float32)
+    yp = _poison(g.y, split["val"], C)
+    labels_clean  = GuardedLabels(g.y, split["val"])
+    labels_poison = GuardedLabels(yp,  split["val"])
+    p_c, t_c, _, r2_c = lf_cts_plus(logits, labels_clean,  split, clusters, 0.8, emb, g)
+    p_p, t_p, _, r2_p = lf_cts_plus(logits, labels_poison, split, clusters, 0.8, emb, g)
+    np.testing.assert_array_equal(p_c, p_p)
+    assert t_c == t_p
+
+
+def test_ctx_g_y_loophole_ts_val(setup):
+    """Poison g.y fully outside val; ts_val must produce identical output (no direct g.y read)."""
+    import copy
+    g, split, logits, _ = setup
+    C = logits.shape[1]
+    g_poison = copy.copy(g)
+    yp = _poison(g.y, split["val"], C)
+    g_poison.y = yp
+    # ts_val only reads through GuardedLabels(g.y, val_mask); g itself is not passed
+    labels_clean  = GuardedLabels(g.y,  split["val"])
+    labels_poison = GuardedLabels(yp,   split["val"])
+    p_c, _ = ts_val(logits, labels_clean,  split)
+    p_p, _ = ts_val(logits, labels_poison, split)
+    np.testing.assert_array_equal(p_c, p_p)

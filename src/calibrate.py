@@ -206,7 +206,9 @@ def lf_cts_plus(
         p = probs0[ni]
         ie = np.isin(src_e, ni) & np.isin(dst_e, ni)
         lh = float((preds[src_e[ie]] == preds[dst_e[ie]]).mean()) if ie.sum() >= 5 else float(h_hat)
-        return [float(np.mean([a_hat[c] for c in cids])), float(len(ni)),
+        # log-size: pseudo-targets (~tens of nodes) and target clusters (~hundreds) are
+        # on very different scales; log keeps training and prediction in the same range.
+        return [float(np.mean([a_hat[c] for c in cids])), float(np.log1p(len(ni))),
                 float(deg[ni].mean()), float(p.max(1).mean()),
                 float(-(p * np.log(np.clip(p, 1e-12, 1))).sum(1).mean()), lh]
 
