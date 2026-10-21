@@ -94,6 +94,24 @@ def test_clustering_only_dataset_raises():
         rx.run_one("texas", "random", "gcn", seed=0)
 
 
+def test_dashboard_conf_hist_reproduces_rows(sandbox, monkeypatch, graph):
+    """make_dashboard_data rebuilds each split and refuses if the row's accuracy differs."""
+    import scripts.make_dashboard_data as mdd
+    monkeypatch.setattr(mdd, "OUT", sandbox / "dashboard")
+    monkeypatch.setattr(mdd, "RUNS_DIR", sandbox / "runs")
+    monkeypatch.setattr(mdd, "load_graph", lambda name: copy.deepcopy(graph))
+    monkeypatch.setattr(mdd, "load_results", rx.load_results)
+    row = rx.run_one("fixture", "structural", "gcn", seed=0)[0]
+    assert mdd.conf_hists(force=False) == 1
+    h = json.loads((sandbox / "dashboard" / "conf_hist" / f"{row['run_id']}.json").read_text())
+    assert h["acc"] == pytest.approx(row["acc"]) and sum(h["counts"]) == h["n_eval"]
+    df = rx.load_results()
+    df.loc[0, "acc"] += 0.01
+    df.to_csv(rx.RESULTS_CSV, index=False)
+    with pytest.raises(RuntimeError, match="not reproducible"):
+        mdd.conf_hists(force=True)
+
+
 def test_logits_cached_and_drop_rows(sandbox):
     a = rx.run_one("fixture", "random", "gcn", seed=2)[0]
     assert len(list((sandbox / "logits").glob("*.npz"))) == 2  # mlp + gcn

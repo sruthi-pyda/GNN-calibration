@@ -17,7 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import matplotlib as mpl
 import streamlit as st
 
-from dashboard.data import SOURCE_HINTS, SOURCES, dataset_table, is_fixture, load_results
+from dashboard import tab_calibration, tab_clustering, tab_shift
+from dashboard.data import SOURCE_HINTS, dataset_table, is_fixture, load_results, sources
 from dashboard.scorecard import NOT_SUPPORTED, NOT_YET, PARTIAL, PASS, scorecard
 
 FIXTURE_BANNER = "FIXTURE DATA - not results"
@@ -39,6 +40,7 @@ TABS = [
     ("Cluster-wise calibration", "P6-B"),
     ("Ablations", "P6-B"),
 ]
+RENDERERS = [tab_clustering.render, tab_shift.render, tab_calibration.render]
 FILTERS = [("dataset", "Dataset"), ("split", "Split"), ("model", "Model"),
            ("seed", "Seed"), ("calib_method", "Calibration method")]
 
@@ -60,9 +62,9 @@ def _mtime(path: Path) -> float:
 
 def sidebar():
     st.sidebar.header("Data")
-    source = st.sidebar.radio("Data source", list(SOURCES), horizontal=True,
+    source = st.sidebar.radio("Data source", list(sources()), horizontal=True,
                               help="fixture = fake rows for building the UI; real = all_results.csv")
-    path = SOURCES[source]
+    path = sources()[source]
     df = _load(str(path), _mtime(path))
     if df is None:
         return source, None, None, source == "fixture"
@@ -82,7 +84,7 @@ def sidebar():
 
 def missing_source(source: str):
     st.warning(
-        f"No {source} results yet: `results/{SOURCES[source].name}` "
+        f"No {source} results yet: `results/{sources()[source].name}` "
         f"does not exist or is empty.\n\nCreate it with `{SOURCE_HINTS[source]}`, "
         "or switch the data source in the sidebar."
     )
@@ -130,9 +132,17 @@ def main():
     tabs = st.tabs([name for name, _ in TABS])
     with tabs[0]:
         overview(df, filtered)
-    for tab, (name, phase) in zip(tabs[1:], TABS[1:]):
+    for tab, (name, phase), render in zip(tabs[1:], TABS[1:], RENDERERS + [None, None]):
         with tab:
-            st.info(f"not computed yet - phase {phase}")
+            if render is None:
+                st.info(f"not computed yet - phase {phase}")
+            elif df is None or fixture:
+                st.info("Run-level views need real results - switch the data source to "
+                        "'real' in the sidebar.")
+            elif filtered.empty:
+                st.info("No rows match the sidebar filters.")
+            else:
+                render(filtered)
 
 
 main()

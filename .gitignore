@@ -21,6 +21,7 @@ cache/
 results/runs/
 results/all_results.csv
 results/failures.log
+results/dashboard/
 
 # Figures (generated from results)
 figures/*.png
