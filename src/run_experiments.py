@@ -170,11 +170,60 @@ def _softmax(logits: np.ndarray, T=1.0) -> np.ndarray:
 
 
 def _calib_none(logits, labels, ctx):
-    return _softmax(logits), {"global": 1.0}
+    return _softmax(logits), {"global": 1.0}, {}
 
 
-# key -> (LABELS declaration, fn(logits, GuardedLabels, ctx) -> (probs, temperatures))
-CALIBRATORS = {"none": ("none", _calib_none)}
+# key -> (LABELS declaration, fn(logits, GuardedLabels, ctx) -> (probs, temps, extras))
+# extras may contain: a_hat, per_cluster_calib, ridge_r2 (for LF methods)
+
+def _calib_ts_val(logits, labels, ctx):
+    from src.calibrate import ts_val
+    p, t = ts_val(logits, labels, ctx["split"])
+    return p, t, {}
+
+def _calib_ts_target_oracle(logits, labels, ctx):
+    from src.calibrate import ts_target_oracle
+    p, t = ts_target_oracle(logits, labels, ctx["split"])
+    return p, t, {}
+
+def _calib_cluster_ts_oracle(logits, labels, ctx):
+    from src.calibrate import cluster_ts_target_oracle
+    p, t, pc = cluster_ts_target_oracle(logits, labels, ctx["split"], ctx["clusters"])
+    return p, t, {"per_cluster_calib": pc}
+
+def _calib_lf_ts(logits, labels, ctx):
+    from src.calibrate import label_free_proxy, lf_ts
+    cl = ctx["cl"]
+    a = label_free_proxy(ctx["g"], logits, ctx["clusters"], cl["h_hat"], cl["embedding"])
+    tmask = ctx["split"]["target_fit"] | ctx["split"]["target_eval"]
+    p, t = lf_ts(logits, a, ctx["clusters"], tmask)
+    return p, t, {"a_hat": a}
+
+def _calib_lf_cts(logits, labels, ctx):
+    from src.calibrate import label_free_proxy, lf_cts
+    cl = ctx["cl"]
+    a = label_free_proxy(ctx["g"], logits, ctx["clusters"], cl["h_hat"], cl["embedding"])
+    tmask = ctx["split"]["target_fit"] | ctx["split"]["target_eval"]
+    p, t, pc = lf_cts(logits, a, ctx["clusters"], tmask)
+    return p, t, {"a_hat": a, "per_cluster_calib": pc}
+
+def _calib_lf_cts_plus(logits, labels, ctx):
+    from src.calibrate import lf_cts_plus
+    cl = ctx["cl"]
+    p, t, pc, r2 = lf_cts_plus(logits, labels, ctx["split"], ctx["clusters"],
+                                 cl["h_hat"], cl["embedding"], ctx["g"])
+    return p, t, {"a_hat": np.array([r["a_hat_raw"] for r in pc]),
+                  "per_cluster_calib": pc, "ridge_r2": r2}
+
+CALIBRATORS = {
+    "none":                      ("none",        _calib_none),
+    "ts_val":                    ("source_val",  _calib_ts_val),
+    "ts_target_oracle":          ("target_fit",  _calib_ts_target_oracle),
+    "cluster_ts_target_oracle":  ("target_fit",  _calib_cluster_ts_oracle),
+    "lf_ts":                     ("none",        _calib_lf_ts),
+    "lf_cts":                    ("none",        _calib_lf_cts),
+    "lf_cts_plus":               ("source_val",  _calib_lf_cts_plus),
+}
 
 
 def _label_mask(split: dict, declared: str) -> np.ndarray:
@@ -241,17 +290,27 @@ def run_one(
             raise NotImplementedError(f"calibrator {calib!r} is implemented in phase P4-A")
         declared, fit = CALIBRATORS[calib]
         audit_label_use(calib, declared)
-        probs, temps = fit(logits, GuardedLabels(g.y, _label_mask(split, declared)),
-                           dict(g=g, split=split, clusters=clusters))
+        probs, temps, extras = fit(
+            logits, GuardedLabels(g.y, _label_mask(split, declared)),
+            dict(g=g, split=split, clusters=clusters, cl=cl, mlp_logits=mlp_logits),
+        )
         # ---- evaluator: the only place target labels are read ----
         metrics = summarise_calibration(probs, g.y, eval_mask, clusters)
+        proxy_corr = float("nan")
+        pq_extras: dict = {}
+        if "a_hat" in extras:
+            from src.calibrate import proxy_quality
+            pq_df, pq_r = proxy_quality(probs, extras["a_hat"], clusters, g.y, eval_mask)
+            proxy_corr = pq_r
+            pq_extras = {"proxy_quality": {"table": pq_df.to_dict("records"), "r": round(float(pq_r), 4)}}
         run_id = make_run_id(dataset, split_kind, model, seed, calib, ablation)
         row = dict(
             run_id=run_id, dataset=dataset, split=split_kind, model=model, seed=seed,
             calib_method=calib, ablation=ablation or "main", **metrics,
-            proxy_corr=temps.get("proxy_corr", float("nan")), train_homophily=diag["train_homophily"], test_homophily=diag["test_homophily"],
+            proxy_corr=proxy_corr, train_homophily=diag["train_homophily"], test_homophily=diag["test_homophily"],
             homophily_gate=cl["method_used"],
-            temperature_summary=json.dumps({k: round(float(v), 4) for k, v in temps.items()}),
+            temperature_summary=json.dumps({k: round(float(v), 4) for k, v in temps.items()
+                                            if not k.startswith("_")}),
             train_sec=info["train_sec"], timestamp=datetime.now(timezone.utc).isoformat(),
             labels_used=declared, gate_source="mlp_pred", h_hat_mlp=h_hat_mlp,
             h_hat_gnn=h_hat_gnn, git_sha=git_sha(),
@@ -270,6 +329,11 @@ def run_one(
             h_true_eval_only=g.meta["edge_homophily"], cluster_method=cl["method_used"],
             n_eval=int(eval_mask.sum()),
         )
+        meta.update(pq_extras)
+        if "per_cluster_calib" in extras:
+            meta["per_cluster_calib"] = extras["per_cluster_calib"]
+        if "ridge_r2" in extras:
+            meta["ridge_r2"] = extras["ridge_r2"]
         append_result(row)
         save_run_artifacts(run_id, logits, probs, clusters, cl["embedding2d"], meta)
         rows.append(row)

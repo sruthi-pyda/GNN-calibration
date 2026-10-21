@@ -85,7 +85,7 @@ def test_none_calibrator_needs_no_labels(graph):
     declared, fit = rx.CALIBRATORS["none"]
     assert declared == "none"
     logits = np.random.default_rng(0).normal(size=(len(graph.y), graph.num_classes))
-    probs, temps = fit(logits, GuardedLabels(graph.y, np.zeros(len(graph.y), bool)), {})
+    probs, temps, _ = fit(logits, GuardedLabels(graph.y, np.zeros(len(graph.y), bool)), {})
     np.testing.assert_allclose(probs.sum(1), 1.0)
 
 
