@@ -62,6 +62,13 @@ def _savefig(fig: plt.Figure, stem: str, caption: str) -> None:
     plt.close(fig)
     print(f"[{stem}] {caption}")
 
+def _warn_empty(stem: str, missing: list[str]) -> None:
+    """Warn to stderr when expected data rows are absent."""
+    if missing:
+        import sys
+        print(f"[{stem}] WARNING: no data for {missing}; affected bars/lines will be empty.",
+              file=sys.stderr)
+
 def _cache_y(ds: str) -> np.ndarray | None:
     """Load true y labels from cache/<dataset>.npz."""
     name = "chameleon_filtered" if ds == "chameleon" else ds
@@ -78,6 +85,8 @@ def make_f1_ece_random_vs_structural():
     grp = sel.groupby(["dataset","split"])["ece"]
     mean = grp.mean().unstack(); std = grp.std().unstack()
 
+    missing = [d for d in DS_ORDER if d not in mean.index]
+    _warn_empty("f1_ece_split", missing)
     fig, ax = plt.subplots(figsize=(9, 4))
     x = np.arange(len(DS_ORDER)); w = 0.35
     for i, (sp, col) in enumerate([("random", WONG[1]), ("structural", WONG[5])]):
@@ -294,10 +303,15 @@ def make_f7_homophily_estimates():
     ax.set_xticks(x); ax.set_xticklabels([DS_NAMES[d] for d in DS_ORDER])
     ax.set_ylabel("Edge homophily"); ax.set_ylim(0, 1); ax.legend()
     fig.tight_layout()
+    # Caption: compute Cora values from data rather than hardcoding
+    cora_row = grp.loc["cora"] if "cora" in grp.index else None
+    cora_note = (f"MLP underestimates Cora ({cora_row['h_hat_mlp']:.2f} vs "
+                 f"target-region h={cora_row['test_homophily']:.2f}); "
+                 if cora_row is not None else "")
     _savefig(fig, "f7_homophily",
-             "F7: MLP-predicted, GCN-predicted, and true edge homophily per dataset – "
-             "structural GCN, seeds 0–4. Dashed line = gate threshold (0.5). "
-             "MLP underestimates Cora (0.45 vs true 0.81); GCN overestimates heterophilic graphs.")
+             f"F7: MLP-predicted, GCN-predicted, and target-region true edge homophily per dataset – "
+             f"structural GCN, seeds 0–4. Dashed line = gate threshold (0.5). "
+             f"{cora_note}GCN overestimates heterophilic graphs.")
 
 
 # ── main ──────────────────────────────────────────────────────────────────────

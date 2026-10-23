@@ -7,7 +7,7 @@
 
 ## Abstract
 
-Graph neural networks are systematically miscalibrated under structural distribution shift — a regime where the test graph community structure differs from the training region. We show that this shift inflates expected calibration error (ECE) on CiteSeer (+0.049 ECE over random split, exceeding seed std 0.019) and exposes per-cluster damage hidden by the overall mean (worst-cluster ECE up to 13.5× overall on roman-empire). We propose **LF-CTS**, a label-free cluster-wise temperature scaling method that estimates per-cluster accuracy from neighbor-agreement statistics and calibrates each cluster independently. On heterophilic graphs where the accuracy proxy is reliable (roman-empire, Pearson r=0.64), LF-CTS closes 48–98% of the calibration gap with zero target labels. The method fails on homophilic graphs because a structure-free MLP underestimates homophily (Cora: h_mlp=0.45 vs h_true=0.81), triggering the wrong proxy branch and worsening calibration. We characterize this failure, show that the oracle gate closes it, and identify MLP–GNN agreement (STAC) as the strongest label-free baseline overall (ECE 0.081 on Cora structural, vs uncalibrated 0.077).
+Graph neural networks are systematically miscalibrated under structural distribution shift — a regime where the test graph community structure differs from the training region. We show that this shift inflates expected calibration error (ECE) on CiteSeer (+0.049 ECE over random split, exceeding seed std 0.019) and exposes per-cluster damage hidden by the overall mean (worst-cluster ECE up to 13.5× overall on roman-empire). We propose **LF-CTS**, a label-free cluster-wise temperature scaling method that estimates per-cluster accuracy from neighbor-agreement statistics and calibrates each cluster independently. On roman-empire (random split), where the accuracy proxy is reliable (Pearson r=0.64), LF-CTS closes 48–98% of the calibration gap with zero target labels. The method fails on homophilic graphs because a structure-free MLP underestimates homophily (Cora: h_mlp=0.45 vs target-region h=0.82), triggering the wrong proxy branch and worsening calibration. We characterize this failure, show that the oracle gate partially closes it, and identify MLP–GNN agreement (STAC) as the strongest label-free baseline overall (5-dataset structural mean ECE 0.081, vs ts_val mean 0.072).
 
 ---
 
@@ -96,28 +96,42 @@ GCN, `none`, mean ± std over seeds 0–4. **C1: PARTIAL.** CiteSeer passes clea
 
 | Dataset      | Split      | Overall ECE | Worst-cluster ECE | Ratio |
 |--------------|------------|-------------|-------------------|-------|
-| cora         | random     | 0.056       | 0.165             | 2.9×  |
-| cora         | structural | 0.077       | 0.188             | 2.4×  |
+| cora         | random     | 0.056       | 0.165             | 3.3×  |
+| cora         | structural | 0.077       | 0.188             | 2.6×  |
+| citeseer     | random     | 0.066       | 0.150             | 2.3×  |
 | citeseer     | structural | 0.115       | 0.230             | 2.0×  |
-| pubmed       | structural | 0.044       | 0.150             | 3.4×  |
-| roman_empire | random     | 0.031       | 0.297             | **9.6×** |
-| roman_empire | structural | 0.025       | 0.302             | **12.1×** |
+| pubmed       | random     | 0.039       | 0.072             | 1.9×  |
+| pubmed       | structural | 0.044       | 0.150             | 3.8×  |
+| chameleon    | random     | 0.141       | 0.161             | 1.1×  |
+| chameleon    | structural | 0.123       | 0.185             | 1.4×  |
+| roman_empire | random     | 0.031       | 0.297             | **13.5×** |
+| roman_empire | structural | 0.025       | 0.302             | **12.3×** |
 
-GCN, `none`. **C2: PASS.** Worst-cluster ECE exceeds 2× overall on 8 of 10 dataset×split combinations. Roman-empire is the strongest case (≥9×), showing that a low mean ECE (0.025) can mask severe damage in a small minority of clusters. Cora structural worst cluster: purity 0.24–0.29 (per P3 measurement, 3/5 seeds).
+Ratios are mean-of-per-seed ratios (consistent with SUMMARY.md). GCN, `none`. **C2: PASS.** Worst-cluster ECE is at least about 2× overall on 8 of 10 dataset×split combinations. Roman-empire is the strongest case (13.5×), showing that a low mean ECE (0.025) can mask severe damage in a small minority of clusters. Chameleon is the exception (≤1.4×) due to thin target clusters (~145 eval nodes over 5 clusters). Cora structural worst cluster: purity 0.24–0.29 (per P3 measurement, 3/5 seeds).
 
 *Figure: F3.*
 
 ### 5.3 C3: LF-CTS recovers per-cluster damage (Fail / Partial for LF-CTS+)
 
-**Gap closed** = (ECE_none − ECE_ours) / (ECE_none − ECE_cluster_oracle):
+**Gap closed** = (ECE_none − ECE_ours) / (ECE_none − ECE_cluster_oracle). Full structural GCN matrix:
+
+| Dataset      | lf_cts  | lf_cts_plus |
+|--------------|---------|-------------|
+| cora         | −559%   | −168%       |
+| citeseer     | −180%   | −132%       |
+| pubmed       | −643%   | −170%       |
+| chameleon    | −584%   | −247%       |
+| roman_empire | undef.† | undef.†     |
+
+†roman_empire structural: cluster oracle (0.027) > none (0.025); denominator is negative so gap closed is undefined. lf_cts ECE (0.024) is marginally better than none (0.025).
+
+LF-CTS is negative on all structural GCN configurations. Positive gap is only achieved on SGC, where the higher uncalibrated ECE leaves more room:
 
 | Config                   | lf_cts | lf_cts_plus |
 |--------------------------|--------|-------------|
-| cora random GCN          | −1740% | 101%        |
-| cora structural SGC      | 46%    | 78%         |
-| citeseer random SGC      | 20%    | 89%         |
-| roman_empire random GCN  | 48%    | −515%       |
-| roman_empire random SGC  | 98%    | 22%         |
+| cora structural SGC      | +46%   | +78%        |
+| citeseer structural SGC  | +39%   | +72%        |
+| roman_empire structural SGC | +106% | +15%     |
 
 **Proxy correlation (structural GCN, a_hat vs true per-cluster accuracy):**
 
@@ -137,13 +151,15 @@ GCN, `none`. **C2: PASS.** Worst-cluster ECE exceeds 2× overall on 8 of 10 data
 
 **Estimated vs true homophily (structural GCN, seeds 0–4 mean):**
 
-| Dataset      | h_hat (MLP) | h_hat (GCN) | True h | Gate branch        |
-|--------------|-------------|-------------|--------|--------------------|
-| cora         | 0.446       | 0.840       | 0.815  | **feature_kmeans** (wrong) |
-| citeseer     | 0.519       | 0.889       | 0.721  | sgc_kmeans (correct) |
-| pubmed       | 0.667       | 0.875       | 0.798  | sgc_kmeans (correct) |
-| chameleon    | 0.519       | 0.817       | 0.223  | sgc_kmeans (wrong) |
-| roman_empire | 0.067       | 0.503       | 0.045  | feature_kmeans (correct) |
+| Dataset      | h_hat (MLP) | h_hat (GCN) | Target-region h | Gate (seeds 0–4)            |
+|--------------|-------------|-------------|------------------|-----------------------------|
+| cora         | 0.446       | 0.840       | 0.815            | **5/5 feature_kmeans** (wrong) |
+| citeseer     | 0.519       | 0.889       | 0.721            | 4/5 sgc, 1/5 feature (seed 4 h_mlp=0.487) |
+| pubmed       | 0.667       | 0.875       | 0.798            | 5/5 sgc_kmeans (correct)   |
+| chameleon    | 0.519       | 0.817       | 0.223            | 2/5 sgc, 3/5 feature (mixed) |
+| roman_empire | 0.067       | 0.503       | 0.045            | 5/5 feature_kmeans (correct) |
+
+"Target-region h" is true edge homophily within the target eval region (not whole-graph h). Chameleon's gate is unstable across seeds because h_hat_mlp straddles 0.5 (range 0.29–0.96 over seeds).
 
 **Gate ablation (LF-CTS ECE, structural GCN, forced-wrong branch):**
 
@@ -155,7 +171,7 @@ GCN, `none`. **C2: PASS.** Worst-cluster ECE exceeds 2× overall on 8 of 10 data
 | chameleon    | 0.350       | 0.437        | +0.087   |
 | roman_empire | 0.024       | 0.215        | **+0.191** |
 
-**C4: PARTIAL.** The gate ablation confirms the gate matters (±0.191 ECE swing on roman-empire). The MLP gate fires correctly on roman-empire and PubMed, but misfires on Cora (h_mlp=0.446 < 0.5 despite h_true=0.815) because a structure-free MLP makes more cross-class errors on graphs with overlapping feature distributions. GCN over-estimates homophily on heterophilic graphs (chameleon: h_gnn=0.817 vs h_true=0.223) due to message-passing consensus; this is why we gate on the MLP. The oracle gate (using true h) closes −0.058 ECE on Cora and −0.133 on Chameleon.
+**C4: PARTIAL.** The gate ablation confirms the gate matters (±0.191 ECE swing on roman-empire). The MLP gate fires correctly on roman-empire and PubMed (5/5 seeds), but misfires consistently on Cora (5/5 feature_kmeans despite h_true=0.815) and inconsistently on Chameleon (h_mlp range 0.29–0.96 across seeds). GCN over-estimates homophily on heterophilic graphs (chameleon: h_gnn=0.817 vs h_true=0.223) due to message-passing consensus; this is why we gate on the MLP. The oracle gate closes −0.058 ECE on Cora and −0.133 on Chameleon. **Important:** even with the correct gate forced on Cora (sgc_kmeans), lf_cts ECE = 0.094 > none (0.077) — the gate is necessary but not sufficient to fix Cora.
 
 *Figure: F7.*
 
@@ -169,11 +185,11 @@ GCN, `none`. **C2: PASS.** Worst-cluster ECE exceeds 2× overall on 8 of 10 data
 | vs lf_ts         | 0.200           | 0.199             | 0.542   | tie       |
 | vs atc_ts        | 0.200           | 0.107             | <0.001  | baseline  |
 | vs stac_global   | 0.200           | 0.081             | <0.001  | baseline  |
-| vs lf_cts_plus   | 0.200           | 0.149             | 0.076   | lf_cts_plus |
+| vs lf_cts_plus   | 0.200           | 0.149             | 0.076   | tie (p>0.05) |
 | vs ts_val        | 0.200           | 0.072             | <0.001  | baseline  |
 | vs cagcn_val     | 0.200           | 0.082             | <0.001  | baseline  |
 
-**C5: FAIL.** LF-CTS does not beat any baseline. It is statistically tied with LF-TS and significantly worse than all others. The failure is explained by C4: when the gate fires correctly (roman-empire, CiteSeer random), LF-CTS matches or beats baselines; when it misfires (Cora, PubMed GCN), it strongly hurts performance. **Best overall label-free method: stac_global** (ECE 0.081 structural GCN across datasets — competitive with ts_val 0.072 — though 0.081 > none 0.077 on Cora specifically).
+**C5: FAIL.** LF-CTS does not beat any baseline. It is statistically tied with LF-TS (p=0.542) and LF-CTS+ (p=0.076, not significant), and significantly worse than all others. The failure is explained by C4: when the gate fires correctly (roman-empire, CiteSeer random), LF-CTS matches or beats baselines; when it misfires (Cora, PubMed GCN), it strongly hurts performance. **Best overall label-free method: stac_global** (5-dataset structural GCN mean ECE 0.081, vs ts_val mean 0.072). Per-dataset: stac_global beats ts_val on CiteSeer (0.061 vs 0.134) and is near-equal on PubMed (0.036 vs 0.035), but is worse on Cora (0.130 vs 0.060) and Chameleon (0.143 vs 0.103).
 
 *Figure: F6.*
 
@@ -239,10 +255,10 @@ We studied label-free calibration of GNNs under structural distribution shift. O
 
 1. Structural shift inflates per-cluster ECE damage more than overall ECE (worst cluster up to 13.5× overall), motivating per-cluster calibration.
 2. The label-free k-NN agreement proxy works on heterophilic graphs (roman-empire r=0.64, gap 48–98% closed) but fails when the MLP gate misfires on homophilic graphs.
-3. Replacing the proxy with MLP–GNN agreement (stac_global) is the most reliable label-free calibrator overall, matching labeled TS on four of five datasets.
+3. Replacing the proxy with MLP–GNN agreement (stac_global) is the most reliable label-free calibrator overall (5-dataset mean ECE 0.081 vs ts_val 0.072); it beats ts_val on CiteSeer but underperforms it on Cora and Chameleon.
 4. Louvain clusters and a better gate are the most promising directions for improving LF-CTS; the mlp_gnn_agreement proxy variant is a strong drop-in replacement that eliminates the gate entirely.
 
-**Headline:** The label-free proxy works on genuinely heterophilic graphs (roman-empire r=0.64, gap 48–98% closed) but fails on homophilic graphs because the structure-free MLP underestimates homophily (Cora h_mlp=0.45 vs h_true=0.81), firing the wrong gate branch and worsening calibration; replacing the proxy with MLP–GNN agreement cuts Cora ECE from 0.236 to 0.095 — though 0.095 remains above the uncalibrated baseline (none: 0.077).
+**Headline:** The label-free proxy works on genuinely heterophilic graphs (roman-empire random, r=0.64, gap 48–98% closed on SGC) but fails on homophilic graphs because the structure-free MLP underestimates homophily (Cora h_mlp=0.45 vs target-region h=0.82), firing the wrong gate branch and worsening calibration; replacing the proxy with MLP–GNN agreement cuts Cora ECE from 0.236 to 0.095 — though 0.095 remains above the uncalibrated baseline (none: 0.077).
 
 ---
 
