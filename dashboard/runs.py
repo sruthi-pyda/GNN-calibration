@@ -67,6 +67,21 @@ MISSING_DASHBOARD_DATA = ("not computed yet - run `python scripts/make_dashboard
 # Shared tab helpers
 # ---------------------------------------------------------------------------
 
+DEMO_DEFAULTS = {"dataset": "cora", "split": "structural", "model": "gcn",
+                 "calib_method": "lf_cts_plus"}
+_EXPORT = {"dir": None, "page": "", "n": 0}
+
+
+def demo_mode() -> bool:
+    return bool(st.session_state.get("demo"))
+
+
+def default_index(options: list, col: str) -> int:
+    """Demo mode preselects the demo path; otherwise 'none' for methods, else the first option."""
+    want = DEMO_DEFAULTS.get(col) if demo_mode() else ("none" if col == "calib_method" else None)
+    return options.index(want) if want in options else 0
+
+
 def pick(df: pd.DataFrame, key: str, cols=("dataset", "split", "seed")) -> dict:
     """One selectbox per column, side by side, each limited by the choices to its left."""
     chosen, sub = {}, df
@@ -74,11 +89,15 @@ def pick(df: pd.DataFrame, key: str, cols=("dataset", "split", "seed")) -> dict:
         options = sorted(sub[col].dropna().unique().tolist())
         if not options:
             return {}
-        default = options.index("none") if col == "calib_method" and "none" in options else 0
         chosen[col] = slot.selectbox(col.replace("_", " ").capitalize(), options,
-                                     index=default, key=f"{key}_{col}")
+                                     index=default_index(options, col), key=f"{key}_{col}")
         sub = sub[sub[col] == chosen[col]]
     return chosen
+
+
+def start_export(directory: str | None, page: str) -> None:
+    """When set (scripts/export_demo_figures.py), show() also saves every chart as a PNG."""
+    _EXPORT.update(dir=directory, page=page, n=0)
 
 
 def rows_for(df: pd.DataFrame, **match) -> pd.DataFrame:
@@ -90,6 +109,11 @@ def rows_for(df: pd.DataFrame, **match) -> pd.DataFrame:
 
 def show(fig, caption: str, rows: pd.DataFrame | None = None) -> None:
     """Render a matplotlib figure with its caption and an "Underlying rows" expander."""
+    if _EXPORT["dir"]:
+        _EXPORT["n"] += 1
+        out = Path(_EXPORT["dir"]) / f"d_{_EXPORT['page']}_{_EXPORT['n']:02d}.png"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out, dpi=200, bbox_inches="tight")
     st.pyplot(fig, clear_figure=True, use_container_width=False)
     plt.close(fig)
     st.caption(caption)

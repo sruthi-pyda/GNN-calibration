@@ -10,7 +10,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from dashboard.runs import MISSING_DASHBOARD_DATA, dashboard_json, pick, show, underlying
+from dashboard.runs import (
+    MISSING_DASHBOARD_DATA, dashboard_json, default_index, pick, show, underlying,
+)
 
 DIAG_KEYS = ["class_tv_distance", "class_kl", "cross_region_edge_frac",
              "feature_centroid_cosine", "train_homophily", "test_homophily",
@@ -88,7 +90,8 @@ def render(df: pd.DataFrame) -> None:
         return
     frame = _frame(splits)
     st.subheader("Shift diagnostics")
-    ds = st.selectbox("Dataset", sorted(frame["dataset"].unique()), key="shift_ds")
+    names = sorted(frame["dataset"].unique())
+    ds = st.selectbox("Dataset", names, index=default_index(names, "dataset"), key="shift_ds")
     diagnostics_table(frame, ds)
     st.subheader("Class distribution")
     sel = pick(frame[frame["dataset"] == ds], "shift", cols=("split", "seed"))

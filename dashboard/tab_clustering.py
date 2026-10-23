@@ -11,7 +11,8 @@ import pandas as pd
 import streamlit as st
 
 from dashboard.runs import (
-    MISSING_DASHBOARD_DATA, dashboard_json, load_meta, load_npy, pick, rows_for, show,
+    MISSING_DASHBOARD_DATA, dashboard_json, default_index, load_meta, load_npy, pick, rows_for,
+    show,
     true_labels, underlying,
 )
 
@@ -21,7 +22,8 @@ METHOD_ORDER = ["sgc_kmeans", "feature_kmeans", "louvain", "spectral"]
 def method_table(clus: dict) -> None:
     st.subheader("Clustering methods")
     names = [k for k in clus if not k.startswith("_")]
-    ds = st.selectbox("Dataset", names, key="clu_methods_ds")
+    ds = st.selectbox("Dataset", names, index=default_index(names, "dataset"),
+                      key="clu_methods_ds")
     rows = []
     for m in METHOD_ORDER:
         r = clus[ds]["methods"].get(m, {})

@@ -11,7 +11,8 @@ import pandas as pd
 import streamlit as st
 
 from dashboard.runs import (
-    MISSING_DASHBOARD_DATA, conf_hist, load_meta, pick, rows_for, show, underlying,
+    MISSING_DASHBOARD_DATA, conf_hist, default_index, load_meta, pick, rows_for, show,
+    underlying,
 )
 
 METHOD_ORDER = ["none", "lf_ts", "atc_ts", "stac", "lf_cts", "lf_cts_plus", "ts_val",
@@ -135,7 +136,8 @@ def render(df: pd.DataFrame) -> None:
     methods = sorted(set(rows_for(df, **sel)["calib_method"]) - {"none"})
     method_run = None
     if methods:
-        m = st.selectbox("Compare with method", methods, key="cal_method")
+        m = st.selectbox("Compare with method", methods,
+                         index=default_index(methods, "calib_method"), key="cal_method")
         method_run = rows_for(df, calib_method=m, ablation="main", **sel).iloc[0]
     else:
         st.info(f"Only the uncalibrated model is available - {NO_CALIBRATED}.")
