@@ -7,7 +7,7 @@
 
 ## Abstract
 
-Graph neural networks are systematically miscalibrated under structural distribution shift — a regime where the test graph community structure differs from the training region. We show that this shift inflates expected calibration error (ECE) on CiteSeer (+0.049 ECE over random split, exceeding seed std 0.019) and exposes per-cluster damage hidden by the overall mean (worst-cluster ECE up to 13.5× overall on roman-empire). We propose **LF-CTS**, a label-free cluster-wise temperature scaling method that estimates per-cluster accuracy from neighbor-agreement statistics and calibrates each cluster independently. On roman-empire structural (SGC), where the accuracy proxy is reliable (Pearson r=0.64), LF-CTS closes 106% of the oracle gap with zero target labels. The method fails on homophilic graphs because a structure-free MLP underestimates homophily (Cora: h_mlp=0.45 vs target-region h=0.82), triggering the wrong proxy branch and worsening calibration. We characterize this failure, show that the oracle gate partially closes it, and identify MLP–GNN agreement (STAC) as the strongest label-free baseline overall (5-dataset structural mean ECE 0.081, vs ts_val mean 0.072).
+Graph neural networks are systematically miscalibrated under structural distribution shift — a regime where the test graph community structure differs from the training region. We show that this shift inflates expected calibration error (ECE) on CiteSeer (+0.049 ECE over random split, exceeding seed std 0.019) and exposes per-cluster damage hidden by the overall mean (worst-cluster ECE up to 13.5× overall on roman-empire). We propose **LF-CTS**, a label-free cluster-wise temperature scaling method that estimates per-cluster accuracy from neighbor-agreement statistics and calibrates each cluster independently. On roman-empire structural (SGC), where the accuracy proxy is reliable (Pearson r=0.64 on GCN), LF-CTS matches the cluster oracle (gap 106% closed) with zero target labels. The method fails on homophilic graphs because a structure-free MLP underestimates homophily (Cora: h_mlp=0.45 vs target-region h=0.82), triggering the wrong proxy branch and worsening calibration. We characterize this failure, show that the oracle gate partially closes it, and identify MLP–GNN agreement (STAC) as the strongest label-free baseline overall (5-dataset structural mean ECE 0.081, vs ts_val mean 0.072).
 
 ---
 
@@ -255,11 +255,11 @@ Louvain clusters dramatically improve LF-CTS on Cora (0.236→0.068) and CiteSee
 We studied label-free calibration of GNNs under structural distribution shift. Our main findings are:
 
 1. Structural shift inflates per-cluster ECE damage more than overall ECE (worst cluster up to 13.5× overall), motivating per-cluster calibration.
-2. The label-free k-NN agreement proxy works on heterophilic graphs (roman-empire structural SGC: r=0.64, gap 106% closed) but fails when the MLP gate misfires on homophilic graphs.
+2. The label-free k-NN agreement proxy works on heterophilic graphs (roman-empire structural SGC: r=0.64 (GCN), matches oracle (gap 106% closed)) but fails when the MLP gate misfires on homophilic graphs.
 3. Replacing the proxy with MLP–GNN agreement (stac_global) is the most reliable label-free calibrator overall (5-dataset mean ECE 0.081 vs ts_val 0.072); it beats ts_val on CiteSeer but underperforms it on Cora and Chameleon.
 4. Louvain clusters and a better gate are the most promising directions for improving LF-CTS; the mlp_gnn_agreement proxy variant is a strong drop-in replacement that eliminates the gate entirely.
 
-**Headline:** The label-free proxy works on genuinely heterophilic graphs (roman-empire structural SGC: r=0.64, gap 106% closed) but fails on homophilic graphs because the structure-free MLP underestimates homophily (Cora h_mlp=0.45 vs target-region h=0.82), firing the wrong gate branch and worsening calibration; replacing the proxy with MLP–GNN agreement cuts Cora ECE from 0.236 to 0.095 — though 0.095 remains above the uncalibrated baseline (none: 0.077).
+**Headline:** The label-free proxy works on genuinely heterophilic graphs (roman-empire structural SGC: r=0.64 (GCN), matches oracle (gap 106% closed)) but fails on homophilic graphs because the structure-free MLP underestimates homophily (Cora h_mlp=0.45 vs target-region h=0.82), firing the wrong gate branch and worsening calibration; replacing the proxy with MLP–GNN agreement cuts Cora ECE from 0.236 to 0.095 — though 0.095 remains above the uncalibrated baseline (none: 0.077).
 
 ---
 
