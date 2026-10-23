@@ -132,9 +132,9 @@ def full_results(results):
              [("lf_cts", 0, 0.20), ("lf_cts", 1, 0.21), ("lf_cts_plus", 0, 0.12),
               ("lf_cts_plus", 1, 0.13), ("cluster_ts_target_oracle", 0, 0.03),
               ("cluster_ts_target_oracle", 1, 0.04)]]
-    for tag, e in [("gate", 0.09), ("oracle_gate", 0.18), ("gate_src", 0.22), ("k_2", 0.19),
-                   ("k_14", 0.2), ("k", 0.2), ("hops_3", 0.21), ("proxy_mlp_gnn_agreement", 0.1),
-                   ("cluster_louvain", 0.07), ("weird", 0.5)]:
+    for tag, e in [("gate", 0.09), ("oracle_gate", 0.18), ("gate_src", 0.22), ("k", 0.19),
+                   ("k_14C", 0.2), ("k_28C", 0.21), ("hops", 0.2), ("hops_3", 0.21),
+                   ("proxy", 0.1), ("cluster", 0.07), ("cluster_random", 0.3), ("weird", 0.5)]:
         rows.append(_write_run(root, "lf_cts", 0, e, ablation=tag))
     rows.append(_write_run(root, "lf_cts", 0, 0.3, ablation="degree", split="degree"))
     _save(root, rows)
@@ -142,13 +142,18 @@ def full_results(results):
     return root, rows
 
 
-def test_parse_tag():
-    assert parse_tag("k_14") == ("k", "14") and parse_tag("k14") == ("k", "14")
-    assert parse_tag("hops=3") == ("hops", "3") and parse_tag("k") == ("k", None)
+def test_parse_tag_matches_p5_sweep_tags():
+    # the tags Lane A's P5 sweep actually wrote (confirmed against her CSV)
+    assert parse_tag("k") == ("k", "2")
+    assert parse_tag("k_14C") == ("k", "14") and parse_tag("k_28C") == ("k", "28")
+    assert parse_tag("hops") == ("hops", "2") and parse_tag("hops_0") == ("hops", "0")
+    assert parse_tag("proxy") == ("proxy", "mlp_gnn_agreement")
+    assert parse_tag("cluster") == ("cluster", "louvain")
+    assert parse_tag("cluster_random") == ("cluster", "random")
     assert parse_tag("oracle_gate") == ("oracle_gate", None)
     assert parse_tag("gate_src") == ("gate_src", None) and parse_tag("gate") == ("gate", None)
-    assert parse_tag("cluster_louvain") == ("cluster", "louvain")
     assert parse_tag("kitten") == (None, None) and parse_tag("weird") == (None, None)
+    assert parse_tag("k_abc") == (None, None)
 
 
 def test_pages_render_uncalibrated_only(results, monkeypatch):
@@ -185,7 +190,7 @@ def test_ablations_page(full_results, monkeypatch):
     assert not at.exception
     text = _texts(at)
     assert "Unrecognised ablation tags (not shown): ['weird']" in text
-    assert "Knob value not recorded for 1 'k' rows" in text
+    assert "Knob value not recorded" not in text
     for phrase in ("forced wrong branch", "ECE as k changes", "ECE as hops changes",
                    "proxy variant", "cluster variant", "lowest-degree half"):
         assert phrase in text, phrase

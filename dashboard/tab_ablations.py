@@ -4,8 +4,9 @@ Lane B (Saanvi) owns this file.
 Phase P6-B.
 
 Ablation rows are tagged in the `ablation` column. The knob value (k, hops, proxy variant,
-cluster method) is not stored in the row, so it is read from the tag: "k_14", "k14", "k=14",
-"hops_3", "proxy_mlp_gnn_agreement", "cluster_louvain". A bare tag ("k") has no value.
+cluster method) is not stored in the row, so it is read from the tag. The P5 sweep wrote
+"k" (k=2), "k_14C", "k_28C", "hops_0".."hops_4" with bare "hops" (=2), "proxy"
+(mlp_gnn_agreement), "cluster" (louvain) and "cluster_random"; see parse_tag / BARE_VALUES.
 Takeaway sentences are computed from the rows shown, never typed in.
 """
 from __future__ import annotations
@@ -24,14 +25,24 @@ GATE_TAGS = {"gate": "forced wrong branch", "oracle_gate": "gate on true homophi
              "gate_src": "gate on GCN predictions"}
 
 
+# Tags as written by the P5 sweep (confirmed with Lane A): a bare family tag stands for that
+# family's one non-default value, and "k_14C" / "k_28C" mean k = 14 / 28.
+BARE_VALUES = {"k": "2", "hops": "2", "proxy": "mlp_gnn_agreement", "cluster": "louvain"}
+
+
 def parse_tag(tag: str) -> tuple[str | None, str | None]:
-    """'k_14' -> ('k', '14'); 'gate' -> ('gate', None); unknown -> (None, None)."""
+    """'k_14C' -> ('k', '14'); 'hops' -> ('hops', '2'); 'gate' -> ('gate', None);
+    unknown -> (None, None)."""
     for fam in FAMILIES:  # longest-prefix first: oracle_gate / gate_src before gate
         if tag == fam:
-            return fam, None
-        if tag.startswith(fam):
+            return fam, BARE_VALUES.get(fam)
+        if tag.startswith(fam) and tag[len(fam)] in "_=-":
             rest = re.sub(r"^[_=\-]+", "", tag[len(fam):])
-            if rest and (fam not in ("k", "hops") or rest.isdigit()):
+            if fam in ("k", "hops"):
+                m = re.fullmatch(r"(\d+)C?", rest)
+                if m:
+                    return fam, m.group(1)
+            elif rest:
                 return fam, rest
     return None, None
 
