@@ -49,6 +49,7 @@ The plan flags this as an accepted risk; document it in the run artifacts.
 | Date | Decision | Reason | Files affected |
 |------|----------|--------|----------------|
 | Oct 2026 | Early stopping uses **validation loss**, not validation accuracy | Val-accuracy saturates at epoch ~17, leaving the model under-trained (conf 0.39 vs acc 0.81 on Cora GCN). Val-loss gives a more fully-trained model and more stable ECE baselines, which is required for C1 (structural-vs-random gap > seed std). Decided before P3, on principle, not by comparing C1 outcomes. | `src/train.py` |
+| Oct 2026 | **Keep the MLP-predicted homophily gate** as specified; report the Cora misfire (h_hat_mlp ≈ 0.45 vs true 0.81 → feature_kmeans) as a finding | The estimator is biased by construction when the MLP is weak (~53% accuracy on Cora), and P3 (e) measured this before any calibration results existed. Changing the gate after P4/P5 results would be redesigning the method after seeing outcomes, and would mean rerunning all 2,575 rows. The cost is measured by the planned `oracle_gate` and `gate_src` ablations instead. | none (reporting only) |
 
 ## End of every phase
 Stop. List files changed, tests run with real output, deviations from the plan, open questions. Do not start the next phase.
