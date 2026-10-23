@@ -7,7 +7,7 @@
 
 ## Abstract
 
-Graph neural networks are systematically miscalibrated under structural distribution shift — a regime where the test graph community structure differs from the training region. We show that this shift inflates expected calibration error (ECE) on CiteSeer (+0.049 ECE over random split, exceeding seed std 0.019) and exposes per-cluster damage hidden by the overall mean (worst-cluster ECE up to 13.5× overall on roman-empire). We propose **LF-CTS**, a label-free cluster-wise temperature scaling method that estimates per-cluster accuracy from neighbor-agreement statistics and calibrates each cluster independently. On roman-empire (random split), where the accuracy proxy is reliable (Pearson r=0.64), LF-CTS closes 48–98% of the calibration gap with zero target labels. The method fails on homophilic graphs because a structure-free MLP underestimates homophily (Cora: h_mlp=0.45 vs target-region h=0.82), triggering the wrong proxy branch and worsening calibration. We characterize this failure, show that the oracle gate partially closes it, and identify MLP–GNN agreement (STAC) as the strongest label-free baseline overall (5-dataset structural mean ECE 0.081, vs ts_val mean 0.072).
+Graph neural networks are systematically miscalibrated under structural distribution shift — a regime where the test graph community structure differs from the training region. We show that this shift inflates expected calibration error (ECE) on CiteSeer (+0.049 ECE over random split, exceeding seed std 0.019) and exposes per-cluster damage hidden by the overall mean (worst-cluster ECE up to 13.5× overall on roman-empire). We propose **LF-CTS**, a label-free cluster-wise temperature scaling method that estimates per-cluster accuracy from neighbor-agreement statistics and calibrates each cluster independently. On roman-empire structural (SGC), where the accuracy proxy is reliable (Pearson r=0.64), LF-CTS closes 106% of the oracle gap with zero target labels. The method fails on homophilic graphs because a structure-free MLP underestimates homophily (Cora: h_mlp=0.45 vs target-region h=0.82), triggering the wrong proxy branch and worsening calibration. We characterize this failure, show that the oracle gate partially closes it, and identify MLP–GNN agreement (STAC) as the strongest label-free baseline overall (5-dataset structural mean ECE 0.081, vs ts_val mean 0.072).
 
 ---
 
@@ -107,7 +107,7 @@ GCN, `none`, mean ± std over seeds 0–4. **C1: PARTIAL.** CiteSeer passes clea
 | roman_empire | random     | 0.031       | 0.297             | **13.5×** |
 | roman_empire | structural | 0.025       | 0.302             | **12.3×** |
 
-Ratios are mean-of-per-seed ratios (consistent with SUMMARY.md). GCN, `none`. **C2: PASS.** Worst-cluster ECE is at least about 2× overall on 8 of 10 dataset×split combinations. Roman-empire is the strongest case (13.5×), showing that a low mean ECE (0.025) can mask severe damage in a small minority of clusters. Chameleon is the exception (≤1.4×) due to thin target clusters (~145 eval nodes over 5 clusters). Cora structural worst cluster: purity 0.24–0.29 (per P3 measurement, 3/5 seeds).
+Ratios are mean-of-per-seed ratios (consistent with SUMMARY.md). GCN, `none`. **C2: PASS.** Worst-cluster ECE is at least about 2× overall on 8 of 10 dataset×split combinations. Roman-empire is the strongest case (13.5×), showing that a low mean ECE (0.025) can mask severe damage in a small minority of clusters. Chameleon is the exception (≤1.4×) due to thin target clusters (~145 eval nodes over 5 clusters in the random split). Cora structural worst cluster: purity 0.24–0.29 (per P3 measurement, 3/5 seeds).
 
 *Figure: F3.*
 
@@ -171,7 +171,7 @@ LF-CTS is negative on all structural GCN configurations. Positive gap is only ac
 | chameleon    | 0.350       | 0.437        | +0.087   |
 | roman_empire | 0.024       | 0.215        | **+0.191** |
 
-**C4: PARTIAL.** The gate ablation confirms the gate matters (±0.191 ECE swing on roman-empire). The MLP gate fires correctly on roman-empire and PubMed (5/5 seeds), but misfires consistently on Cora (5/5 feature_kmeans despite h_true=0.815) and inconsistently on Chameleon (h_mlp range 0.29–0.96 across seeds). GCN over-estimates homophily on heterophilic graphs (chameleon: h_gnn=0.817 vs h_true=0.223) due to message-passing consensus; this is why we gate on the MLP. The oracle gate closes −0.058 ECE on Cora and −0.133 on Chameleon. **Important:** even with the correct gate forced on Cora (sgc_kmeans), lf_cts ECE = 0.094 > none (0.077) — the gate is necessary but not sufficient to fix Cora.
+**C4: PARTIAL.** The gate ablation confirms the gate matters (±0.191 ECE swing on roman-empire). The MLP gate fires correctly on roman-empire and PubMed (5/5 seeds), but misfires consistently on Cora (5/5 feature_kmeans despite target-region h=0.815) and inconsistently on Chameleon (h_mlp range 0.29–0.96 across seeds). GCN over-estimates homophily on heterophilic graphs (chameleon: h_gnn=0.817 vs target-region h=0.223) due to message-passing consensus; this is why we gate on the MLP. The oracle gate closes −0.058 ECE on Cora and −0.133 on Chameleon. **Important:** even with the correct gate forced on Cora (sgc_kmeans), lf_cts ECE = 0.094 > none (0.077) — the gate is necessary but not sufficient to fix Cora.
 
 *Figure: F7.*
 
@@ -246,6 +246,7 @@ Louvain clusters dramatically improve LF-CTS on Cora (0.236→0.068) and CiteSee
 - **Structural shift is weak on several graphs.** C1 holds only on CiteSeer. Cora's 78 components make its structural split partly a component split; PubMed and roman-empire show ECE near-identical across split types.
 - **Texas supports clustering analysis only.** Too small (183 nodes) for a reliable structural split.
 - **Degree split amplifies gate-misfire.** LF-CTS gives ECE 0.359 ± 0.028 on Cora degree split (vs none = 0.050 ± 0.016); the same proxy failure applies.
+- **Cross-machine reproducibility.** Roman-empire worst-cluster ECE shows machine-dependent variation (13.5× on macOS vs 14.4× on Windows), likely because k-means on the 22k-node graph lands on slightly different cluster assignments across platforms despite identical seeds. All dashboard numbers and figures use the macOS sweep results (`results/all_results.csv`).
 
 ---
 
@@ -254,11 +255,11 @@ Louvain clusters dramatically improve LF-CTS on Cora (0.236→0.068) and CiteSee
 We studied label-free calibration of GNNs under structural distribution shift. Our main findings are:
 
 1. Structural shift inflates per-cluster ECE damage more than overall ECE (worst cluster up to 13.5× overall), motivating per-cluster calibration.
-2. The label-free k-NN agreement proxy works on heterophilic graphs (roman-empire r=0.64, gap 48–98% closed) but fails when the MLP gate misfires on homophilic graphs.
+2. The label-free k-NN agreement proxy works on heterophilic graphs (roman-empire structural SGC: r=0.64, gap 106% closed) but fails when the MLP gate misfires on homophilic graphs.
 3. Replacing the proxy with MLP–GNN agreement (stac_global) is the most reliable label-free calibrator overall (5-dataset mean ECE 0.081 vs ts_val 0.072); it beats ts_val on CiteSeer but underperforms it on Cora and Chameleon.
 4. Louvain clusters and a better gate are the most promising directions for improving LF-CTS; the mlp_gnn_agreement proxy variant is a strong drop-in replacement that eliminates the gate entirely.
 
-**Headline:** The label-free proxy works on genuinely heterophilic graphs (roman-empire random, r=0.64, gap 48–98% closed on SGC) but fails on homophilic graphs because the structure-free MLP underestimates homophily (Cora h_mlp=0.45 vs target-region h=0.82), firing the wrong gate branch and worsening calibration; replacing the proxy with MLP–GNN agreement cuts Cora ECE from 0.236 to 0.095 — though 0.095 remains above the uncalibrated baseline (none: 0.077).
+**Headline:** The label-free proxy works on genuinely heterophilic graphs (roman-empire structural SGC: r=0.64, gap 106% closed) but fails on homophilic graphs because the structure-free MLP underestimates homophily (Cora h_mlp=0.45 vs target-region h=0.82), firing the wrong gate branch and worsening calibration; replacing the proxy with MLP–GNN agreement cuts Cora ECE from 0.236 to 0.095 — though 0.095 remains above the uncalibrated baseline (none: 0.077).
 
 ---
 
