@@ -243,28 +243,32 @@ def test_ts_target_oracle_invariant_to_nontargetfit_poison(setup):
 
 
 def test_lf_cts_invariant_to_any_label_poison(setup):
-    """lf_cts declares LABELS='none'; output must not change if all labels are poisoned."""
-    g, split, logits, clusters = setup
-    C = logits.shape[1]
-    all_mask = np.ones(logits.shape[0], dtype=bool)
-    yp = (g.y + 1) % C
+    """lf_cts declares LABELS='none'; it accepts no labels and no graph, so its output
+    is fully determined by (logits, a_hat, clusters, target_mask). Determinism check."""
+    _, split, logits, clusters = setup
     a_hat = np.array([0.5, 0.6, 0.7])
     target_mask = split["target_fit"] | split["target_eval"]
-    p_c, t_c, _ = lf_cts(logits, a_hat, clusters, target_mask)
-    p_p, t_p, _ = lf_cts(logits, a_hat, clusters, target_mask)
-    np.testing.assert_array_equal(p_c, p_p)
+    p1, t1, _ = lf_cts(logits, a_hat, clusters, target_mask)
+    p2, t2, _ = lf_cts(logits, a_hat, clusters, target_mask)
+    np.testing.assert_array_equal(p1, p2)
+    assert t1 == t2
 
 
 def test_lf_cts_plus_invariant_to_nonval_label_poison(setup):
+    import copy
     g, split, logits, clusters = setup
     C = logits.shape[1]
     rng = np.random.default_rng(0)
     emb = rng.normal(size=(g.X.shape[0], 16)).astype(np.float32)
     yp = _poison(g.y, split["val"], C)
+    # Poison g.y outside val and pass the poisoned graph to the second call.
+    # lf_cts_plus reads g.edge_index (not g.y), so output must be identical.
+    g_poison = copy.copy(g)
+    g_poison.y = yp
     labels_clean  = GuardedLabels(g.y, split["val"])
     labels_poison = GuardedLabels(yp,  split["val"])
     p_c, t_c, _, r2_c = lf_cts_plus(logits, labels_clean,  split, clusters, 0.8, emb, g)
-    p_p, t_p, _, r2_p = lf_cts_plus(logits, labels_poison, split, clusters, 0.8, emb, g)
+    p_p, t_p, _, r2_p = lf_cts_plus(logits, labels_poison, split, clusters, 0.8, emb, g_poison)
     np.testing.assert_array_equal(p_c, p_p)
     assert t_c == t_p
 

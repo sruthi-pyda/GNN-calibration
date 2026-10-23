@@ -17,6 +17,9 @@ Rows: 1000 main + 1575 ablation = 2575 total. No adjustments made; deviations fr
 
 Accuracy (GCN, structural, mean over seeds):
 cora 0.808, citeseer 0.694, pubmed 0.726, chameleon 0.541, roman_empire 0.265
+⚠️ MISMATCH: Saanvi's rerun (lane-a/p5, a07baae) gives cora≈0.696, chameleon≈0.239.
+Trace against all_results.csv (col "acc", split="structural", model="gcn", ablation="main")
+before reporting. The 0.808/0.541 values above need verification.
 
 ---
 
@@ -51,7 +54,7 @@ cora 0.808, citeseer 0.694, pubmed 0.726, chameleon 0.541, roman_empire 0.265
 
 **C2 verdict: PASS.** Worst-cluster ECE is at least 2× overall on 8 of 10 dataset×split combinations. Roman Empire is the strongest case (13×), showing that low mean ECE can hide severe per-cluster damage on large heterophilic graphs. Chameleon (1.1×–1.4×) is the exception, likely because per-cluster ECE is NaN-heavy given thin target clusters (~145 eval nodes spread over 5 clusters).
 
-Cora worst cluster (structural, GCN, seed=0): cluster_ece_worst typically falls in clusters with purity 0.44–0.63 (low-purity catch-all or sparse-degree clusters), consistent with the baseline prediction from P1-B.
+Cora worst cluster (structural, GCN, seed=0): cluster_ece_worst falls in clusters with purity 0.24–0.29 (per P3 measurement, 3/5 seeds); not necessarily the low-degree cluster.
 
 ---
 
@@ -178,7 +181,7 @@ Sensitivity is low (within 0.02 ECE across 14× range). Fewer clusters (k=2) per
 | citeseer     | 0.226              | **0.055**         |
 | roman_empire | 0.024              | 0.037             |
 
-**MLP-GNN agreement is dramatically better for homophilic graphs.** On Cora it reduces ECE from 0.236 to 0.095 and on CiteSeer from 0.226 to 0.055. This variant does not rely on the gate branch (it always uses inter-model agreement), bypassing the Cora gate-misfire issue. Roman_empire is slightly worse (0.037 vs 0.024) because k-NN agreement already works well there. The stac_global method uses this same signal and achieves strong overall results.
+**MLP-GNN agreement is dramatically better for homophilic graphs.** On Cora it reduces ECE from 0.236 to 0.095 (though 0.095 is still above uncalibrated ECE none=0.077) and on CiteSeer from 0.226 to 0.055. This variant does not rely on the gate branch (it always uses inter-model agreement), bypassing the Cora gate-misfire issue. Roman_empire is slightly worse (0.037 vs 0.024) because k-NN agreement already works well there. The stac_global method uses this same signal and achieves strong overall results.
 
 ### Cluster method (structural GCN, lf_cts)
 
@@ -223,7 +226,7 @@ On Cora degree split, none ECE=0.050 ± 0.016. lf_cts and lf_ts both give ECE=0.
 | C4: Homophily gate matters | **PARTIAL** | Gate ablation confirms ±0.191 ECE swing; but MLP gate misfires on Cora |
 | C5: LF-CTS beats label-free baselines | **FAIL** | Wilcoxon p<0.001 against atc_ts, stac_global; tied with lf_ts only |
 
-**Headline finding (one sentence):** The label-free proxy works on genuinely heterophilic graphs (roman_empire r=0.688, gap 48–98% closed) but fails on homophilic graphs because the structure-free MLP underestimates homophily (Cora h_mlp=0.451 vs h_true=0.810), firing the wrong gate branch and making already under-confident models worse; replacing the proxy with MLP-GNN agreement cuts Cora ECE from 0.236 to 0.095.
+**Headline finding (one sentence):** The label-free proxy works on genuinely heterophilic graphs (roman_empire r=0.688, gap 48–98% closed) but fails on homophilic graphs because the structure-free MLP underestimates homophily (Cora h_mlp=0.451 vs h_true=0.810), firing the wrong gate branch and making already under-confident models worse; replacing the proxy with MLP-GNN agreement cuts Cora ECE from 0.236 to 0.095, though 0.095 remains above the uncalibrated baseline (none: 0.077).
 
 ---
 
