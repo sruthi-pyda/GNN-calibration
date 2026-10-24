@@ -164,8 +164,10 @@ def render(df: pd.DataFrame) -> None:
         st.warning(f"Unrecognised ablation tags (not shown): {unknown}")
     c1, c2, c3 = st.columns(3)
     methods = sorted(abl["calib_method"].dropna().unique().tolist())
-    method = c1.selectbox("Method", methods, index=default_index(methods, "calib_method"),
-                          key="abl_method")
+    # the P5 ablations were run with lf_cts, so it is the default here even in demo mode
+    m_idx = methods.index("lf_cts") if "lf_cts" in methods else default_index(methods,
+                                                                              "calib_method")
+    method = c1.selectbox("Method", methods, index=m_idx, key="abl_method")
     splits = sorted(abl[abl["family"] != "degree"]["split"].dropna().unique().tolist()) or ["structural"]
     split = c2.selectbox("Split", splits, index=default_index(splits, "split"), key="abl_split")
     models = sorted(abl["model"].dropna().unique().tolist())

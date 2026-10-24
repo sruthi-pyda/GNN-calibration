@@ -15,7 +15,7 @@ from dashboard.runs import (
     underlying,
 )
 
-METHOD_ORDER = ["none", "lf_ts", "atc_ts", "stac", "lf_cts", "lf_cts_plus", "ts_val",
+METHOD_ORDER = ["none", "lf_ts", "atc_ts", "stac", "stac_global", "lf_cts", "lf_cts_plus", "ts_val",
                 "cagcn_val", "ts_target_oracle", "cluster_ts_target_oracle"]
 NO_CALIBRATED = "no calibrated rows yet - phase P4-A"
 
@@ -128,7 +128,9 @@ def temperature_slider(run: pd.Series) -> None:
 
 
 def render(df: pd.DataFrame) -> None:
-    sel = pick(df[df["calib_method"] == "none"], "cal", cols=("dataset", "split", "seed"))
+    # main rows only: ablation runs (e.g. the degree split) have their own page
+    base = df[(df["calib_method"] == "none") & (df["ablation"].fillna("main") == "main")]
+    sel = pick(base, "cal", cols=("dataset", "split", "seed"))
     if not sel:
         st.info("No uncalibrated rows to show")
         return

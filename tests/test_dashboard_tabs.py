@@ -137,6 +137,8 @@ def full_results(results):
                    ("proxy", 0.1), ("cluster", 0.07), ("cluster_random", 0.3), ("weird", 0.5)]:
         rows.append(_write_run(root, "lf_cts", 0, e, ablation=tag))
     rows.append(_write_run(root, "lf_cts", 0, 0.3, ablation="degree", split="degree"))
+    # P5's degree ablation also has uncalibrated rows; "degree" sorts before "structural"
+    rows.append(_write_run(root, "none", 0, 0.1, ablation="degree", split="degree"))
     _save(root, rows)
     _write_dashboard_data(root, [r["run_id"] for r in rows])
     return root, rows
