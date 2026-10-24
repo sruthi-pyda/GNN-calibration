@@ -54,11 +54,11 @@ def build(df: pd.DataFrame) -> list[tuple[str, str, str, str]]:
     none = main_rows(df, calib_method="none")
     cora_s = none[(none["dataset"] == "cora") & (none["split"] == "structural")]
 
-    card = scorecard(main_rows(df))
+    card = scorecard(df[df["model"] == DEMO["model"]])  # incl. ablation rows (C4)
     status = ", ".join(f"{r.claim} {r.status}" for r in card.itertuples())
     steps.append(("Overview", "Turn on **Demo mode** in the sidebar. Page: **Overview**.",
                   f"Six graphs, five claims - measured so far: {status}.",
-                  "scorecard over all main GCN rows"))
+                  "scorecard over all GCN rows (main + ablations)"))
 
     cm = clus.get("cora", {}).get("methods", {})
     nmi = cm.get("sgc_kmeans", {}).get("nmi")

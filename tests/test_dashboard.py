@@ -96,6 +96,9 @@ def test_c5_ours_vs_label_free():
     assert check_c5(_df(rows[:2]))[0] == PASS
     assert check_c5(_df(rows))[0] == PARTIAL
     assert check_c5(_df([_row(calib="lf_cts")]))[0] == NOT_YET
+    # the P5 sweep names STAC "stac_global"; it must count as a label-free baseline
+    stac = [_row(calib="lf_cts", ece=0.05), _row(calib="stac_global", ece=0.03)]
+    assert check_c5(_df(stac))[0] == NOT_SUPPORTED
 
 
 def test_scorecard_runs_on_fixture():

@@ -36,7 +36,7 @@ CLAIMS = {
 }
 
 OURS = ("lf_cts", "lf_cts_plus")
-LABEL_FREE_BASELINES = ("lf_ts", "atc_ts", "stac")
+LABEL_FREE_BASELINES = ("lf_ts", "atc_ts", "stac", "stac_global")
 
 
 def _rows(df, calib=None, split=None, ablation="main"):
