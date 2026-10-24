@@ -8,16 +8,25 @@ Never trains, clusters or downloads: it only reads results/ and cache/ files.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
 
 ROOT = Path(__file__).parent.parent
 
-SOURCES = {
-    "fixture": ROOT / "results" / "fixture_results.csv",
-    "real": ROOT / "results" / "all_results.csv",
-}
+
+def results_dir() -> Path:
+    """results/ by default; GNN_CAL_RESULTS points the dashboard elsewhere (used by tests)."""
+    return Path(os.environ.get("GNN_CAL_RESULTS", ROOT / "results"))
+
+
+def sources() -> dict:
+    return {"fixture": results_dir() / "fixture_results.csv",
+            "real": results_dir() / "all_results.csv"}
+
+
+SOURCES = sources()
 
 # How to create each source when it is missing (shown to the user, never run).
 SOURCE_HINTS = {

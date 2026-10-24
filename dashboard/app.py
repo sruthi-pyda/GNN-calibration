@@ -9,6 +9,7 @@ Read-only: never trains, clusters or downloads. Everything shown comes from resu
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -17,7 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import matplotlib as mpl
 import streamlit as st
 
-from dashboard.data import SOURCE_HINTS, SOURCES, dataset_table, is_fixture, load_results
+from dashboard import tab_ablations, tab_calibration, tab_clusterwise, tab_clustering, tab_shift
+from dashboard.runs import DEMO_DEFAULTS, start_export
+from dashboard.data import SOURCE_HINTS, dataset_table, is_fixture, load_results, sources
 from dashboard.scorecard import NOT_SUPPORTED, NOT_YET, PARTIAL, PASS, scorecard
 
 FIXTURE_BANNER = "FIXTURE DATA - not results"
@@ -31,14 +34,15 @@ mpl.rcParams.update({
 
 STATUS_STYLE = {PASS: ":green", PARTIAL: ":orange", NOT_SUPPORTED: ":red", NOT_YET: ":gray"}
 
-TABS = [
-    ("Overview", None),
-    ("Clustering explorer", "P4-B"),
-    ("Shift split viewer", "P4-B"),
-    ("Calibration", "P4-B"),
-    ("Cluster-wise calibration", "P6-B"),
-    ("Ablations", "P6-B"),
-]
+# Only the selected page renders on each rerun (st.tabs would render all six every time).
+PAGES = {
+    "Overview": None,
+    "Clustering explorer": tab_clustering.render,
+    "Shift split viewer": tab_shift.render,
+    "Calibration": tab_calibration.render,
+    "Cluster-wise calibration": tab_clusterwise.render,
+    "Ablations": tab_ablations.render,
+}
 FILTERS = [("dataset", "Dataset"), ("split", "Split"), ("model", "Model"),
            ("seed", "Seed"), ("calib_method", "Calibration method")]
 
@@ -59,16 +63,24 @@ def _mtime(path: Path) -> float:
 
 
 def sidebar():
-    st.sidebar.header("Data")
-    source = st.sidebar.radio("Data source", list(SOURCES), horizontal=True,
-                              help="fixture = fake rows for building the UI; real = all_results.csv")
-    path = SOURCES[source]
+    demo = st.sidebar.toggle("Demo mode", key="demo",
+                             help="Real results only, demo path preselected, advanced controls hidden")
+    if demo:
+        source = "real"
+    else:
+        st.sidebar.header("Data")
+        source = st.sidebar.radio("Data source", list(sources()), horizontal=True,
+                                  help="fixture = fake rows for building the UI; "
+                                       "real = all_results.csv")
+    path = sources()[source]
     df = _load(str(path), _mtime(path))
     if df is None:
         return source, None, None, source == "fixture"
     fixture = source == "fixture" or is_fixture(df)
     if fixture:
         st.sidebar.error(FIXTURE_BANNER)
+    if demo:
+        return source, df, df[df["model"] == DEMO_DEFAULTS["model"]], fixture
     st.sidebar.header("Filters")
     filtered = df
     for col, label in FILTERS:
@@ -82,7 +94,7 @@ def sidebar():
 
 def missing_source(source: str):
     st.warning(
-        f"No {source} results yet: `results/{SOURCES[source].name}` "
+        f"No {source} results yet: `results/{sources()[source].name}` "
         f"does not exist or is empty.\n\nCreate it with `{SOURCE_HINTS[source]}`, "
         "or switch the data source in the sidebar."
     )
@@ -127,12 +139,20 @@ def main():
     if df is None:
         missing_source(source)
 
-    tabs = st.tabs([name for name, _ in TABS])
-    with tabs[0]:
+    page = st.radio("Page", list(PAGES), horizontal=True, key="page",
+                    label_visibility="collapsed")
+    start_export(os.environ.get("GNN_CAL_EXPORT_DIR"),
+                 page.lower().replace(" ", "_").replace("-", ""))
+    render = PAGES[page]
+    if render is None:
         overview(df, filtered)
-    for tab, (name, phase) in zip(tabs[1:], TABS[1:]):
-        with tab:
-            st.info(f"not computed yet - phase {phase}")
+    elif df is None or fixture:
+        st.info("Run-level views need real results - switch the data source to "
+                "'real' in the sidebar.")
+    elif filtered.empty:
+        st.info("No rows match the sidebar filters.")
+    else:
+        render(filtered)
 
 
 main()
