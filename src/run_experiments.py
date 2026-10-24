@@ -170,11 +170,102 @@ def _softmax(logits: np.ndarray, T=1.0) -> np.ndarray:
 
 
 def _calib_none(logits, labels, ctx):
-    return _softmax(logits), {"global": 1.0}
+    return _softmax(logits), {"global": 1.0}, {}
 
 
-# key -> (LABELS declaration, fn(logits, GuardedLabels, ctx) -> (probs, temperatures))
-CALIBRATORS = {"none": ("none", _calib_none)}
+# key -> (LABELS declaration, fn(logits, GuardedLabels, ctx) -> (probs, temps, extras))
+# extras may contain: a_hat, per_cluster_calib, ridge_r2 (for LF methods)
+
+def _calib_ts_val(logits, labels, ctx):
+    from src.calibrate import ts_val
+    p, t = ts_val(logits, labels, ctx["split"])
+    return p, t, {}
+
+def _calib_ts_target_oracle(logits, labels, ctx):
+    from src.calibrate import ts_target_oracle
+    p, t = ts_target_oracle(logits, labels, ctx["split"])
+    return p, t, {}
+
+def _calib_cluster_ts_oracle(logits, labels, ctx):
+    from src.calibrate import cluster_ts_target_oracle
+    p, t, pc = cluster_ts_target_oracle(logits, labels, ctx["split"], ctx["clusters"])
+    return p, t, {"per_cluster_calib": pc}
+
+def _get_a_hat(logits: np.ndarray, ctx: dict) -> np.ndarray:
+    """Per-cluster accuracy proxy, honouring proxy_variant in ctx."""
+    if ctx.get("proxy_variant") == "mlp_gnn_agreement":
+        mlp_pred = ctx["mlp_logits"].argmax(1)
+        gnn_pred = logits.argmax(1)
+        agree = mlp_pred == gnn_pred
+        K = int(ctx["clusters"].max()) + 1
+        C = logits.shape[1]
+        a = np.array([
+            float(agree[ctx["clusters"] == c].mean())
+            if (ctx["clusters"] == c).any() else 1.0 / C
+            for c in range(K)
+        ])
+        return np.clip(a, 1.0 / C, 0.999)
+    from src.calibrate import label_free_proxy
+    cl = ctx["cl"]
+    return label_free_proxy(ctx["g"], logits, ctx["clusters"], cl["h_hat"], cl["embedding"])
+
+
+def _calib_lf_ts(logits, labels, ctx):
+    from src.calibrate import lf_ts
+    a = _get_a_hat(logits, ctx)
+    tmask = ctx["split"]["target_fit"] | ctx["split"]["target_eval"]
+    p, t = lf_ts(logits, a, ctx["clusters"], tmask)
+    return p, t, {"a_hat": a}
+
+def _calib_lf_cts(logits, labels, ctx):
+    from src.calibrate import lf_cts
+    a = _get_a_hat(logits, ctx)
+    tmask = ctx["split"]["target_fit"] | ctx["split"]["target_eval"]
+    p, t, pc = lf_cts(logits, a, ctx["clusters"], tmask)
+    return p, t, {"a_hat": a, "per_cluster_calib": pc}
+
+def _calib_lf_cts_plus(logits, labels, ctx):
+    from src.calibrate import lf_cts_plus
+    cl = ctx["cl"]
+    p, t, pc, r2 = lf_cts_plus(logits, labels, ctx["split"], ctx["clusters"],
+                                 cl["h_hat"], cl["embedding"], ctx["g"])
+    return p, t, {"a_hat": np.array([r["a_tilde"] for r in pc]),  # C3 correlation uses corrected a_tilde
+                  "per_cluster_calib": pc, "ridge_r2": r2}
+
+def _calib_cagcn_val(logits, labels, ctx):
+    from src.baselines import cagcn_val
+    from src.calibrate import apply_temperature
+    T_nodes = cagcn_val(logits, ctx["g"], labels, ctx["split"])
+    probs = apply_temperature(logits, T_nodes)
+    return probs, {"mean": round(float(T_nodes.mean()), 4), "std": round(float(T_nodes.std()), 4)}, {}
+
+def _calib_atc_ts(logits, labels, ctx):
+    from src.baselines import atc_ts
+    from src.calibrate import apply_temperature
+    T, threshold, acc_hat = atc_ts(logits, ctx["g"], labels, ctx["split"])
+    probs = apply_temperature(logits, T)
+    return probs, {"global": round(T, 4), "_threshold": round(threshold, 4),
+                   "_acc_hat": round(acc_hat, 4)}, {}
+
+def _calib_stac_global(logits, labels, ctx):
+    from src.baselines import stac_global
+    from src.calibrate import apply_temperature
+    T = stac_global(logits, ctx["g"], labels, ctx["split"], ctx["mlp_logits"])
+    probs = apply_temperature(logits, T)
+    return probs, {"global": round(T, 4)}, {}
+
+CALIBRATORS = {
+    "none":                      ("none",        _calib_none),
+    "ts_val":                    ("source_val",  _calib_ts_val),
+    "cagcn_val":                 ("source_val",  _calib_cagcn_val),
+    "ts_target_oracle":          ("target_fit",  _calib_ts_target_oracle),
+    "cluster_ts_target_oracle":  ("target_fit",  _calib_cluster_ts_oracle),
+    "lf_ts":                     ("none",        _calib_lf_ts),
+    "atc_ts":                    ("source_val",  _calib_atc_ts),
+    "stac_global":               ("none",        _calib_stac_global),
+    "lf_cts":                    ("none",        _calib_lf_cts),
+    "lf_cts_plus":               ("source_val",  _calib_lf_cts_plus),
+}
 
 
 def _label_mask(split: dict, declared: str) -> np.ndarray:
@@ -205,6 +296,13 @@ def run_one(
     calibs: tuple = ("none",),
     ablation: Optional[str] = None,
     force: bool = False,
+    # ablation knobs (defaults = standard run)
+    gate_source: str = "mlp_pred",      # mlp_pred | gnn_pred | true_oracle
+    force_gate: Optional[str] = None,   # sgc_kmeans | feature_kmeans | None
+    n_clusters: Optional[int] = None,   # None -> num_classes
+    hops: int = 2,
+    proxy_variant: str = "edge_knn",    # edge_knn | mlp_gnn_agreement
+    cluster_override: Optional[str] = None,  # louvain | random | None
 ) -> list[dict]:
     """Run one (dataset, split, model, seed) configuration with all calibrators.
 
@@ -231,29 +329,68 @@ def run_one(
     mlp_pred, gnn_pred = mlp_logits.argmax(1), logits.argmax(1)
     h_hat_mlp = estimate_homophily(g.edge_index, mlp_pred)
     h_hat_gnn = estimate_homophily(g.edge_index, gnn_pred)
-    cl = cluster_graph(g, mlp_pred, gate_source="mlp_pred", seed=seed)
+
+    # --- derive gate labels and auto-invert for "gate" ablation ---
+    _force_gate = force_gate
+    if ablation == "gate":
+        _force_gate = "feature_kmeans" if h_hat_mlp > 0.5 else "sgc_kmeans"
+    if ablation == "oracle_gate":
+        gate_source = "true_oracle"
+    if ablation == "gate_src":
+        gate_source = "gnn_pred"
+
+    if gate_source == "mlp_pred":
+        gate_labels, gs_str = mlp_pred, "mlp_pred"
+    elif gate_source == "gnn_pred":
+        gate_labels, gs_str = gnn_pred, "gnn_pred"
+    else:  # true_oracle — allowed only for oracle_gate ablation
+        gate_labels, gs_str = g.y, "true_oracle"
+
+    cl = cluster_graph(g, gate_labels, gate_source=gs_str, seed=seed,
+                       k=n_clusters, hops=hops, force=_force_gate)
+
+    # optional cluster-method override (louvain / random) — keeps same embedding
+    if cluster_override == "louvain":
+        from src.clustering import louvain_clusters
+        cl = {**cl, "clusters": louvain_clusters(g, seed=seed)}
+    elif cluster_override == "random":
+        k = n_clusters or g.num_classes
+        cl = {**cl, "clusters": np.random.default_rng(seed).integers(
+            0, k, size=g.X.shape[0]).astype(np.int64)}
+
     clusters, eval_mask = cl["clusters"], split["target_eval"]
     diag = split["diagnostics"]
 
     rows = []
     for calib in calibs:
         if calib not in CALIBRATORS:
-            raise NotImplementedError(f"calibrator {calib!r} is implemented in phase P4-A")
+            raise NotImplementedError(f"calibrator {calib!r} is not registered")
         declared, fit = CALIBRATORS[calib]
         audit_label_use(calib, declared)
-        probs, temps = fit(logits, GuardedLabels(g.y, _label_mask(split, declared)),
-                           dict(g=g, split=split, clusters=clusters))
+        probs, temps, extras = fit(
+            logits, GuardedLabels(g.y, _label_mask(split, declared)),
+            dict(g=g, split=split, clusters=clusters, cl=cl, mlp_logits=mlp_logits,
+                 proxy_variant=proxy_variant),
+        )
         # ---- evaluator: the only place target labels are read ----
         metrics = summarise_calibration(probs, g.y, eval_mask, clusters)
+        proxy_corr = float("nan")
+        pq_extras: dict = {}
+        if "a_hat" in extras:
+            from src.calibrate import proxy_quality
+            pq_df, pq_r = proxy_quality(probs, extras["a_hat"], clusters, g.y, eval_mask)
+            proxy_corr = pq_r
+            pq_extras = {"proxy_quality": {"table": pq_df.to_dict("records"), "r": round(float(pq_r), 4)}}
         run_id = make_run_id(dataset, split_kind, model, seed, calib, ablation)
         row = dict(
             run_id=run_id, dataset=dataset, split=split_kind, model=model, seed=seed,
             calib_method=calib, ablation=ablation or "main", **metrics,
-            proxy_corr=temps.get("proxy_corr", float("nan")), train_homophily=diag["train_homophily"], test_homophily=diag["test_homophily"],
+            proxy_corr=proxy_corr, train_homophily=diag["train_homophily"], test_homophily=diag["test_homophily"],
             homophily_gate=cl["method_used"],
-            temperature_summary=json.dumps({k: round(float(v), 4) for k, v in temps.items()}),
+            temperature_summary=json.dumps({k: round(float(v), 4) for k, v in temps.items()
+                                            if not k.startswith("_")}),
             train_sec=info["train_sec"], timestamp=datetime.now(timezone.utc).isoformat(),
-            labels_used=declared, gate_source="mlp_pred", h_hat_mlp=h_hat_mlp,
+            labels_used=declared, gate_source=gs_str, h_hat_mlp=h_hat_mlp,
             h_hat_gnn=h_hat_gnn, git_sha=git_sha(),
         )
         _, bins_u = ece(probs, g.y, eval_mask, strategy="uniform")
@@ -270,6 +407,11 @@ def run_one(
             h_true_eval_only=g.meta["edge_homophily"], cluster_method=cl["method_used"],
             n_eval=int(eval_mask.sum()),
         )
+        meta.update(pq_extras)
+        if "per_cluster_calib" in extras:
+            meta["per_cluster_calib"] = extras["per_cluster_calib"]
+        if "ridge_r2" in extras:
+            meta["ridge_r2"] = extras["ridge_r2"]
         append_result(row)
         save_run_artifacts(run_id, logits, probs, clusters, cl["embedding2d"], meta)
         rows.append(row)
@@ -291,12 +433,22 @@ if __name__ == "__main__":
     parser.add_argument("--models", nargs="+", default=["gcn"])
     parser.add_argument("--seeds", nargs="+", type=int, default=[0])
     parser.add_argument("--calib", nargs="+", default=["none"])
-    parser.add_argument("--ablation", default=None)
+    parser.add_argument("--ablation", default=None,
+                        help="tag: gate|oracle_gate|gate_src|k|hops|proxy|cluster|degree")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--resume", action="store_true",
                         help="skip run_ids already in all_results.csv (the default)")
     parser.add_argument("--force", action="store_true",
                         help="drop existing rows for these run_ids and retrain")
+    # ablation knobs
+    parser.add_argument("--n-clusters", type=int, default=None,
+                        help="override k (default: num_classes)")
+    parser.add_argument("--hops", type=int, default=2,
+                        help="SGC smoothing hops (default: 2)")
+    parser.add_argument("--proxy-variant", default="edge_knn",
+                        choices=["edge_knn", "mlp_gnn_agreement"])
+    parser.add_argument("--cluster-override", default=None,
+                        choices=["louvain", "random"])
     args = parser.parse_args()
 
     configs = [(ds, sp, m, s) for ds in args.datasets for sp in args.splits
@@ -318,7 +470,12 @@ if __name__ == "__main__":
             continue
         try:
             t0 = datetime.now()
-            for r in run_one(ds, sp, m, s, tuple(args.calib), args.ablation, force=args.force):
+            for r in run_one(ds, sp, m, s, tuple(args.calib), args.ablation,
+                             force=args.force,
+                             n_clusters=args.n_clusters,
+                             hops=args.hops,
+                             proxy_variant=args.proxy_variant,
+                             cluster_override=args.cluster_override):
                 print(f"{tag} {r['calib_method']}: acc {r['acc']:.3f} ece {r['ece']:.3f} "
                       f"worst {r['cluster_ece_worst']:.3f} ({(datetime.now() - t0).seconds}s)",
                       flush=True)
