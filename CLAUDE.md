@@ -23,6 +23,7 @@ python -m src.data --summary
 python -m src.clustering --dataset cora --compare
 python -m src.run_experiments --dry-run
 streamlit run dashboard/app.py
+python -m streamlit run demo/app.py   (live LF-CTS demo, needs results/ unpacked)
 ```
 
 ## Architectural notes for P3 and later
