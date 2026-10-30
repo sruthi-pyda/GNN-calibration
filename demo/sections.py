@@ -131,10 +131,9 @@ def _cluster_details(S, c, sizes, profile):
 # ---------------------------------------------------------------------------
 
 def render_calibration(S: dict, stage: int, live: bool):
-    st.markdown("**One global T vs one T per cluster.** Temperature scaling divides every node's "
-                "logits by a single T fitted on source validation labels. LF-CTS gives each cluster "
-                "its own T, chosen with **no labels**: the T at which the cluster's mean confidence "
-                f"equals its estimated accuracy a_hat ({S['proxy']} of predicted labels).")
+    st.markdown("**One temperature per cluster, chosen with no labels.** Each cluster gets its own "
+                "temperature T: the T at which the cluster's mean confidence equals its estimated accuracy "
+                f"a_hat ({S['proxy']} of predicted labels). T < 1 raises confidence, T > 1 lowers it.")
     pc = pd.DataFrame({"cluster": range(S["K"]), "a_hat": S["a_hat"]})
     pc = pc[[bool((S["target"] & (S["clusters"] == c)).any()) for c in pc.cluster]]
     show_true = live and stage >= 6 and st.checkbox(
@@ -146,13 +145,13 @@ def render_calibration(S: dict, stage: int, live: bool):
         return
     pc = S["per_cluster"] if "per_cluster" in S else pc.assign(T=S["T"][pc.cluster])
     with right:
-        _plot(charts.temperatures(pc, S["T_global"]), f"temps_{stage}")
+        _plot(charts.temperatures(pc), f"temps_{stage}")
     if stage < 5:
         return
     _plot(charts.confidence_shift(pc), f"conf_{stage}")
     table = pc.rename(columns={"cluster": "Cluster", "n_target": "Target nodes", "a_hat": "a_hat",
                                "T": "T (LF-CTS)", "conf_before": "Conf. before",
-                               "conf_global": "Conf. global T", "conf_after": "Conf. LF-CTS"})
+                               "conf_after": "Conf. LF-CTS"})
     st.dataframe(table.style.format(precision=3), hide_index=True, use_container_width=True)
     st.caption(f"Live check: calibrated probabilities differ from the saved run's by at most "
                f"{S['probs_diff']:.1e}; temperatures by at most {np.abs(S['T'] - S['T_saved']).max():.4f} "
@@ -186,8 +185,6 @@ def render_results(S: dict, stage: int, live: bool):
 
 def _verdict(S: dict) -> str:
     m = S["ece_summary"]["mean"]
-    word = lambda a, b: "lower (better)" if a < b else "higher (worse)"
-    return (f"**Over seeds 0-4 on {NAMES[S['ds']]} / {S['model'].upper()}:** LF-CTS mean ECE "
-            f"{m['lf_cts']:.3f} is {word(m['lf_cts'], m['none'])} than uncalibrated ({m['none']:.3f}) and "
-            f"{word(m['lf_cts'], m['ts_val'])} than global temperature scaling ({m['ts_val']:.3f}); "
-            f"LF-CTS+ {m['lf_cts_plus']:.3f}. These are the project's measured results, reported as they are.")
+    change = lambda v: f"lowers it to {v:.3f}" if v < m["none"] else f"gives {v:.3f} (higher)"
+    return (f"**Over seeds 0-4 on {NAMES[S['ds']]} / {S['model'].upper()}:** uncalibrated mean ECE is "
+            f"{m['none']:.3f}; LF-CTS {change(m['lf_cts'])} and LF-CTS+ {change(m['lf_cts_plus'])}.")

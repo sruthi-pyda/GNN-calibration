@@ -13,7 +13,7 @@ from plotly.subplots import make_subplots
 
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 GREY, LIGHT, INK, MUTED = "#8a8984", "#d6d5d0", "#0b0b0b", "#52514e"
-METHOD_COLOURS = {"none": GREY, "ts_val": SERIES[0], "lf_cts": SERIES[1], "lf_cts_plus": SERIES[2]}
+METHOD_COLOURS = {"none": GREY, "lf_cts": SERIES[1], "lf_cts_plus": SERIES[2]}
 REGION_COLOURS = {"Source labels (train + val)": SERIES[0], "Source region (unlabelled)": "#86b6ef",
                   "Target region": SERIES[1]}
 
@@ -89,23 +89,22 @@ def accuracy_estimates(pc: pd.DataFrame, true_acc=None) -> go.Figure:
                    yaxis_title="accuracy", bargap=0.35)
 
 
-def temperatures(pc: pd.DataFrame, T_global: float) -> go.Figure:
+def temperatures(pc: pd.DataFrame) -> go.Figure:
     x = [f"C{c}" for c in pc.cluster]
     fig = go.Figure(go.Bar(x=x, y=pc["T"], name="LF-CTS: one T per cluster",
                            marker_color=[cluster_colour(c) for c in pc.cluster],
                            hovertemplate="%{x}: T = %{y:.3f}<extra></extra>"))
-    fig.add_trace(go.Scatter(x=x, y=[T_global] * len(x), mode="lines", name=f"One global T = {T_global:.3f} (TS)",
-                             line=dict(color=INK, width=2, dash="dash"), hoverinfo="skip"))
-    return _layout(fig, 340, title="Step 4 - per-cluster temperature vs one global temperature",
+    fig.add_trace(go.Scatter(x=x, y=[1.0] * len(x), mode="lines", name="T = 1 (no change)",
+                             line=dict(color=INK, width=1.5, dash="dot"), hoverinfo="skip"))
+    return _layout(fig, 340, title="Step 4 - temperature for each cluster",
                    yaxis_title="temperature T", bargap=0.35)
 
 
 def confidence_shift(pc: pd.DataFrame) -> go.Figure:
-    """Mean confidence of target nodes per cluster: before, global TS, after LF-CTS."""
+    """Mean confidence of target nodes per cluster: before and after LF-CTS."""
     x = [f"C{c}" for c in pc.cluster]
     fig = go.Figure()
     for col, name, colour in [("conf_before", "Original (uncalibrated)", GREY),
-                              ("conf_global", "After one global T", SERIES[0]),
                               ("conf_after", "After LF-CTS", SERIES[1])]:
         fig.add_trace(go.Bar(x=x, y=pc[col], name=name, marker_color=colour,
                              hovertemplate="%{x}: %{y:.3f}<extra>" + name + "</extra>"))

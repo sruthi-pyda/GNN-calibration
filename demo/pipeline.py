@@ -30,8 +30,7 @@ STAGES = ["Load graph", "Create clusters", "Estimate cluster accuracy",
           "Calculate temperatures", "Calibrate predictions", "Display final results"]
 DATASETS = {"Cora": "cora", "CiteSeer": "citeseer", "Chameleon": "chameleon"}
 MODELS = {"SGC": "sgc", "GCN": "gcn"}
-METHODS = {"none": "Uncalibrated", "ts_val": "Temperature scaling (one global T)",
-           "lf_cts": "LF-CTS (one T per cluster)", "lf_cts_plus": "LF-CTS+"}
+METHODS = {"none": "Uncalibrated", "lf_cts": "LF-CTS (one T per cluster)", "lf_cts_plus": "LF-CTS+"}
 GATE_THRESHOLD = 0.5
 
 
@@ -118,17 +117,14 @@ def stage_temperatures(S: dict) -> dict:
         sel = S["target"] & (S["clusters"] == c)
         if sel.any():
             T[c], clamped[c] = _bisect_T(S["logits"][sel], float(S["a_hat"][c]))
-    ts_row = S["rows"][S["rows"].run_id == run_id(S["ds"], S["model"], S["seed"], "ts_val")]
-    T_global = float(json.loads(ts_row.iloc[0].temperature_summary)["global"])
     saved = np.array([c["T"] for c in S["meta"]["per_cluster_calib"]])
-    return dict(T=T, clamped=clamped, T_saved=saved, T_global=T_global)
+    return dict(T=T, clamped=clamped, T_saved=saved)
 
 
 def stage_calibrate(S: dict) -> dict:
     """5. Apply the temperatures. LF-CTS+ needs a ridge fit, so its probs are loaded."""
     probs = {
         "none": apply_temperature(S["logits"], 1.0),
-        "ts_val": apply_temperature(S["logits"], S["T_global"]),
         "lf_cts": apply_temperature(S["logits"], S["T"][S["clusters"]]),
         "lf_cts_plus": np.load(run_path(S["ds"], S["model"], S["seed"], "lf_cts_plus")
                                / "probs.npy"),
@@ -139,7 +135,6 @@ def stage_calibrate(S: dict) -> dict:
         dict(cluster=c, n_target=int((S["target"] & (S["clusters"] == c)).sum()),
              a_hat=float(S["a_hat"][c]), T=float(S["T"][c]),
              conf_before=float(conf["none"][S["target"] & (S["clusters"] == c)].mean()),
-             conf_global=float(conf["ts_val"][S["target"] & (S["clusters"] == c)].mean()),
              conf_after=float(conf["lf_cts"][S["target"] & (S["clusters"] == c)].mean()))
         for c in range(S["K"]) if (S["target"] & (S["clusters"] == c)).any()])
     return dict(probs=probs, per_cluster=per_cluster,
